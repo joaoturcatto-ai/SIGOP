@@ -20,11 +20,12 @@ with tab_lista:
     if cqh.empty:
         st.info("Nenhuma escala de CQH cadastrada ainda.")
     else:
-        exibir = cqh.merge(
-            servidores[["id", "nome", "cargo"]],
+       exibir = cqh.merge(
+            servidores[["id", "nome", "cargo"]].rename(columns={"id": "servidor_ref"}),
             left_on="servidor_id",
-            right_on="id",
+            right_on="servidor_ref",
             how="left",
+        )
         )
         st.dataframe(
             exibir[["id", "data", "nome", "cargo", "equipe"]].sort_values("data"),
