@@ -18,46 +18,14 @@ def get_client() -> Client:
     return create_client(url, key)
 
 
-# Colunas esperadas de cada tabela. Usado para que o DataFrame retornado
-# por fetch_table() nunca fique "sem colunas" quando a tabela está vazia -
-# isso evita KeyError ao filtrar (ex: participantes["operacao_id"] == x)
-# em telas que ainda não têm nenhum registro cadastrado.
-TABLE_COLUMNS = {
-    "servidores": [
-        "id", "nome", "matricula", "cargo", "equipe", "telefone",
-        "situacao", "observacoes", "created_at",
-    ],
-    "viaturas": ["id", "identificacao", "modelo", "status", "created_at"],
-    "operacoes": [
-        "id", "nome", "data", "horario", "local", "cidade",
-        "delegado_responsavel", "objetivo", "briefing", "status", "created_at",
-    ],
-    "operacao_participantes": [
-        "id", "operacao_id", "servidor_id", "equipe", "viatura_id",
-        "folga_concedida", "created_at",
-    ],
-    "cqh": ["id", "data", "servidor_id", "equipe", "created_at"],
-    "afastamentos": [
-        "id", "servidor_id", "tipo", "data_inicio", "data_fim",
-        "observacoes", "created_at",
-    ],
-}
-
-
 def fetch_table(table: str, order_by: str | None = None) -> pd.DataFrame:
-    """Busca todos os registros de uma tabela e retorna como DataFrame.
-
-    Se a tabela estiver vazia, retorna um DataFrame vazio mas já com as
-    colunas corretas, para que filtros como df["coluna"] não quebrem.
-    """
+    """Busca todos os registros de uma tabela e retorna como DataFrame."""
     client = get_client()
     query = client.table(table).select("*")
     if order_by:
         query = query.order(order_by)
     response = query.execute()
     data = response.data or []
-    if not data:
-        return pd.DataFrame(columns=TABLE_COLUMNS.get(table, []))
     return pd.DataFrame(data)
 
 
