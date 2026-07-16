@@ -120,8 +120,8 @@ with tab_gerenciar:
             if not df_equipes.empty:
                 df_equipe_op = df_equipes[df_equipes["operacao_id"] == id_op_selecionada].copy()
             
-            # Agrupa e mostra as equipes (Equipe 01, Equipe 02, etc.)
-            equipes_existentes = ["Equipe 01", "Equipe 02", "Equipe 03", "Equipe 04", "Equipe 05"]
+            # Gera automaticamente opções de equipes de "Equipe 01" até "Equipe 20"
+            equipes_existentes = [f"Equipe {i:02d}" for i in range(1, 21)]
             
             # Mostra as equipes que possuem membros cadastrados
             if not df_equipe_op.empty:
