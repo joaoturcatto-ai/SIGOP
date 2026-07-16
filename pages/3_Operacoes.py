@@ -76,6 +76,34 @@ with tab_gerenciar:
                     edit_status = st.selectbox("Status da Operação", lista_status, index=idx_status)
                 
                 st.markdown("---")
+                st.markdown("#### 📅 Configuração de Folga Compensatória")
+                
+                edit_possui_folga = st.checkbox("Esta operação gera direito a folga compensatória?", value=bool(op_sel.get("possui_folga", False)))
+                
+                col_folga1, col_folga2 = st.columns(2)
+                
+                folga_data_padrao = date.today()
+                if op_sel.get("folga_data_inicio"):
+                    try:
+                        folga_data_padrao = pd.to_datetime(op_sel["folga_data_inicio"]).date()
+                    except Exception:
+                        pass
+                
+                with col_folga1:
+                    edit_folga_data = st.date_input("Data de Início da Folga", value=folga_data_padrao, disabled=not edit_possui_folga)
+                with col_folga2:
+                    lista_duracoes = [
+                        "Meio período (Matutino)", 
+                        "Meio período (Vespertino)", 
+                        "01 dia", 
+                        "02 dias", 
+                        "03 dias"
+                    ]
+                    duracao_atual = op_sel.get("folga_duracao", "01 dia")
+                    idx_duracao = lista_duracoes.index(duracao_atual) if duracao_atual in lista_duracoes else 2
+                    edit_folga_duracao = st.selectbox("Duração / Período da Folga", options=lista_duracoes, index=idx_duracao, disabled=not edit_possui_folga)
+                
+                st.markdown("---")
                 edit_objetivo = st.text_area("Objetivo da Operação", value=str(op_sel.get("objetivo", "") or ""))
                 edit_briefing = st.text_area("Briefing / Instruções", value=str(op_sel.get("briefing", "") or ""))
                 
@@ -98,11 +126,14 @@ with tab_gerenciar:
                             "data_fim": edit_data_fim.isoformat(),
                             "horario": edit_horario.strftime("%H:%M:%S"),
                             "status": edit_status,
+                            "possui_folga": bool(edit_possui_folga),
+                            "folga_data_inicio": edit_folga_data.isoformat() if edit_possui_folga else None,
+                            "folga_duracao": edit_folga_duracao if edit_possui_folga else None,
                             "objetivo": edit_objetivo,
                             "briefing": edit_briefing
                         }
                         update_row("operacoes", id_op_selecionada, dados_atualizados)
-                        st.toast("Operação updated!", icon="✔️")
+                        st.toast("Operação atualizada com sucesso!", icon="✔️")
                         st.rerun()
                         
                 if btn_excluir_op:
@@ -224,6 +255,12 @@ with tab_gerenciar:
             objetivo_op = op_sel.get("objetivo", "Não detalhado")
             briefing_op = op_sel.get("briefing", "Não detalhado")
             
+            # Informações de Folga para o PDF
+            folga_pdf_texto = "Não prevista / Não configurada"
+            if op_sel.get("possui_folga", False):
+                dt_folga_fmtd = pd.to_datetime(op_sel.get("folga_data_inicio")).strftime("%d/%m/%Y") if op_sel.get("folga_data_inicio") else "N/D"
+                folga_pdf_texto = f"Agendada para iniciar em {dt_folga_fmtd} ({op_sel.get('folga_duracao', '01 dia')})"
+
             # Monta equipes estruturadas para o PDF, com Líder destacado
             texto_equipes_pdf = ""
             if not df_equipe_op.empty:
@@ -273,6 +310,10 @@ with tab_gerenciar:
                     <tr>
                         <td style="padding: 5px; font-weight: bold;">Delegado Responsável:</td>
                         <td style="padding: 5px;">{delegado_nome}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 5px; font-weight: bold; color: #b7791f;">Folga Agendada:</td>
+                        <td style="padding: 5px; font-weight: bold; color: #b7791f;">{folga_pdf_texto}</td>
                     </tr>
                 </table>
                 
@@ -324,6 +365,24 @@ with tab_gerenciar:
 with tab_cadastrar:
     st.subheader("Cadastrar Nova Operação")
     
+    # Usamos uma chave no state para renderizar o form e ler as alterações do checkbox de folga de forma síncrona
+    possui_folga_cad = st.checkbox("Esta operação gera direito a folga compensatória para os escalados?")
+    
+    col_folga_cad1, col_folga_cad2 = st.columns(2)
+    with col_folga_cad1:
+        cad_folga_data = st.date_input("Data da Folga", value=date.today(), disabled=not possui_folga_cad, key="cad_folga_dt")
+    with col_folga_cad2:
+        lista_duracoes_cad = [
+            "Meio período (Matutino)", 
+            "Meio período (Vespertino)", 
+            "01 dia", 
+            "02 dias", 
+            "03 dias"
+        ]
+        cad_folga_duracao = st.selectbox("Duração / Período da Folga", options=lista_duracoes_cad, index=2, disabled=not possui_folga_cad, key="cad_folga_dur")
+    
+    st.markdown("---")
+    
     with st.form("form_nova_operacao", clear_on_submit=True):
         col_c1, col_c2 = st.columns(2)
         
@@ -363,6 +422,9 @@ with tab_cadastrar:
                     "data_fim": cad_data_fim.isoformat(),
                     "horario": cad_horario.strftime("%H:%M:%S"),
                     "status": cad_status,
+                    "possui_folga": bool(possui_folga_cad),
+                    "folga_data_inicio": cad_folga_data.isoformat() if possui_folga_cad else None,
+                    "folga_duracao": cad_folga_duracao if possui_folga_cad else None,
                     "objetivo": cad_objetivo,
                     "briefing": cad_briefing
                 }
