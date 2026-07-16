@@ -13,13 +13,13 @@ tab_listar, tab_cadastrar = st.tabs(["📋 Viaturas Cadastradas", "➕ Cadastrar
 with tab_listar:
     st.subheader("Frota de Viaturas")
     
-    # Busca as viaturas cadastradas
+    # Busca as viaturas cadastradas diretamente do banco
     df_viaturas = fetch_table("viaturas")
     
     if not df_viaturas.empty:
         df_display = df_viaturas.copy()
         
-        # Garante que as novas colunas existam no DataFrame para evitar erros de renderização
+        # Garante que as novas colunas existam no DataFrame
         colunas_obrigatorias = ["identificacao", "modelo", "status", "tipo_placa", "placa_oficial", "placa_reservada"]
         for col in colunas_obrigatorias:
             if col not in df_display.columns:
@@ -47,7 +47,7 @@ with tab_listar:
         
         # Cria um seletor com as viaturas cadastradas
         opcoes_viaturas = {
-            row["id"]: f"{row['identificacao']} - {row['modelo']} (Oficial: {row.get('placa_oficial') or 'N/A'})"
+            row["id"]: f"{row['identificacao']} - {row['modelo']} (Oficial: {row.get('placa_oficial') or 'N/D'})"
             for _, row in df_viaturas.iterrows()
         }
         
@@ -75,12 +75,12 @@ with tab_listar:
                     edit_placa_reservada = st.text_input("Placa Reservada (Fria)", value=str(vtr_sel.get("placa_reservada", "") or ""))
                     
                     # Seleciona o status correspondente
-                    status_atual = str(vtr_sel.get("status", "Ativa"))
-                    lista_status = ["Ativa", "Em Manutenção", "Baixada", "Cedida", "Disponível", "Oficina", "Em operação"]
+                    status_atual = str(vtr_sel.get("status", "Disponível"))
+                    lista_status = ["Disponível", "Oficina", "Em operação", "Ativa", "Em Manutenção", "Baixada", "Cedida"]
                     idx_status = lista_status.index(status_atual) if status_atual in lista_status else 0
                     edit_status = st.selectbox("Status", lista_status, index=idx_status)
                 
-                c_btn1, c_btn2, _ = st.columns([1, 1, 4])
+                c_btn1, c_btn2, _ = st.columns([1.2, 1.2, 4])
                 with c_btn1:
                     btn_salvar_edicao = st.form_submit_button("💾 Salvar Alterações", use_container_width=True)
                 with c_btn2:
@@ -94,13 +94,19 @@ with tab_listar:
                             "identificacao": edit_identificacao,
                             "modelo": edit_modelo,
                             "tipo_placa": edit_tipo_placa,
-                            "placa_oficial": edit_placa_oficial if edit_placa_oficial else None,
-                            "placa_reservada": edit_placa_reservada if edit_placa_reservada else None,
+                            "placa_oficial": edit_placa_oficial if edit_placa_oficial.strip() else None,
+                            "placa_reservada": edit_placa_reservada if edit_placa_reservada.strip() else None,
                             "status": edit_status
                         }
-                        update_row("viaturas", id_selecionado, dados_atualizados)
-                        st.success("✔️ Viatura atualizada com sucesso!")
-                        st.rerun()
+                        
+                        # Atualiza no banco
+                        resultado = update_row("viaturas", id_selecionado, dados_atualizados)
+                        if resultado:
+                            st.toast("Alterações salvas com sucesso!", icon="✔️")
+                            st.success("✔️ Viatura atualizada com sucesso!")
+                            st.rerun()
+                        else:
+                            st.error("❌ Não foi possível salvar as alterações no banco de dados. Verifique a conexão.")
                         
                 if btn_excluir:
                     delete_row("viaturas", id_selecionado)
@@ -136,8 +142,8 @@ with tab_cadastrar:
                     "identificacao": identificacao,
                     "modelo": modelo,
                     "tipo_placa": tipo_placa,
-                    "placa_oficial": placa_oficial if placa_oficial else None,
-                    "placa_reservada": placa_reservada if placa_reservada else None,
+                    "placa_oficial": placa_oficial if placa_oficial.strip() else None,
+                    "placa_reservada": placa_reservada if placa_reservada.strip() else None,
                     "status": status
                 }
                 
@@ -146,4 +152,4 @@ with tab_cadastrar:
                     st.success(f"✔️ Viatura {identificacao} cadastrada com sucesso!")
                     st.rerun()
                 else:
-                    st.error("❌ Erro ao salvar dados no Supabase. Certifique-se de executar o Passo 1 SQL no Supabase.")
+                    st.error("❌ Erro ao salvar dados no Supabase. Certifique-se de executar os passos SQL.")
