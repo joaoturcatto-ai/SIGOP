@@ -23,6 +23,7 @@ create table if not exists viaturas (
     identificacao text not null,
     modelo text,
     status text not null default 'Disponível' check (status in ('Disponível', 'Oficina', 'Em operação')),
+    tipo_placa text not null default 'Oficial' check (tipo_placa in ('Oficial', 'Reservada')),
     created_at timestamp with time zone default now()
 );
 
@@ -30,7 +31,8 @@ create table if not exists viaturas (
 create table if not exists operacoes (
     id bigint generated always as identity primary key,
     nome text not null,
-    data date not null,
+    data_inicio date not null,
+    data_fim date not null,
     horario time,
     local text,
     cidade text,

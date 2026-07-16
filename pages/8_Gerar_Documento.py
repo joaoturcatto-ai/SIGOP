@@ -15,7 +15,7 @@ st.title("📄 Gerar Ordem de Operação")
 st.caption("Gera o documento oficial da operação em Word (.docx) ou PDF")
 
 try:
-    operacoes = fetch_table("operacoes", order_by="data")
+    operacoes = fetch_table("operacoes", order_by="data_inicio")
     servidores = fetch_table("servidores")
     viaturas = fetch_table("viaturas")
     participantes = fetch_table("operacao_participantes")
@@ -57,7 +57,10 @@ else:
 st.markdown("---")
 st.subheader("Pré-visualização")
 st.write(f"**Operação:** {dados_op['nome']}")
-st.write(f"**Data:** {dados_op['data']} — **Horário:** {dados_op.get('horario', '—')}")
+st.write(
+    f"**Período:** {dados_op['data_inicio']} até {dados_op['data_fim']} — "
+    f"**Horário:** {dados_op.get('horario', '—')}"
+)
 st.write(f"**Local:** {dados_op.get('local', '—')} — **Cidade:** {dados_op.get('cidade', '—')}")
 st.write(f"**Delegado responsável:** {dados_op.get('delegado_responsavel', '—')}")
 st.write("**Objetivo:**")
@@ -91,7 +94,10 @@ def gerar_docx() -> BytesIO:
     nome_op.alignment = 1
 
     doc.add_paragraph()
-    doc.add_paragraph(f"Data: {dados_op['data']}    Horário: {dados_op.get('horario', '—')}")
+    doc.add_paragraph(
+        f"Período: {dados_op['data_inicio']} até {dados_op['data_fim']}    "
+        f"Horário: {dados_op.get('horario', '—')}"
+    )
     doc.add_paragraph(f"Local: {dados_op.get('local', '—')}    Cidade: {dados_op.get('cidade', '—')}")
     doc.add_paragraph(f"Delegado responsável: {dados_op.get('delegado_responsavel', '—')}")
 
@@ -136,7 +142,7 @@ def gerar_pdf() -> BytesIO:
     elementos.append(Paragraph(f"<b>ORDEM DE OPERAÇÃO — {dados_op['nome'].upper()}</b>", styles["Heading2"]))
     elementos.append(Spacer(1, 8))
 
-    elementos.append(Paragraph(f"<b>Data:</b> {dados_op['data']} &nbsp;&nbsp; <b>Horário:</b> {dados_op.get('horario', '—')}", styles["Normal"]))
+    elementos.append(Paragraph(f"<b>Período:</b> {dados_op['data_inicio']} até {dados_op['data_fim']} &nbsp;&nbsp; <b>Horário:</b> {dados_op.get('horario', '—')}", styles["Normal"]))
     elementos.append(Paragraph(f"<b>Local:</b> {dados_op.get('local', '—')} &nbsp;&nbsp; <b>Cidade:</b> {dados_op.get('cidade', '—')}", styles["Normal"]))
     elementos.append(Paragraph(f"<b>Delegado responsável:</b> {dados_op.get('delegado_responsavel', '—')}", styles["Normal"]))
     elementos.append(Spacer(1, 12))

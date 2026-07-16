@@ -6,7 +6,7 @@ diretamente com o Supabase - isso deixa o código mais fácil de manter.
 
 import streamlit as st
 import pandas as pd
-from datetime import date
+from datetime import date, timedelta
 from supabase import create_client, Client
 
 
@@ -18,14 +18,46 @@ def get_client() -> Client:
     return create_client(url, key)
 
 
+# Colunas esperadas de cada tabela. Usado para que o DataFrame retornado
+# por fetch_table() nunca fique "sem colunas" quando a tabela está vazia -
+# isso evita KeyError ao filtrar (ex: participantes["operacao_id"] == x)
+# em telas que ainda não têm nenhum registro cadastrado.
+TABLE_COLUMNS = {
+    "servidores": [
+        "id", "nome", "matricula", "cargo", "equipe", "telefone",
+        "situacao", "observacoes", "created_at",
+    ],
+    "viaturas": ["id", "identificacao", "modelo", "status", "tipo_placa", "created_at"],
+    "operacoes": [
+        "id", "nome", "data_inicio", "data_fim", "horario", "local", "cidade",
+        "delegado_responsavel", "objetivo", "briefing", "status", "created_at",
+    ],
+    "operacao_participantes": [
+        "id", "operacao_id", "servidor_id", "equipe", "viatura_id",
+        "folga_concedida", "created_at",
+    ],
+    "cqh": ["id", "data", "servidor_id", "equipe", "created_at"],
+    "afastamentos": [
+        "id", "servidor_id", "tipo", "data_inicio", "data_fim",
+        "observacoes", "created_at",
+    ],
+}
+
+
 def fetch_table(table: str, order_by: str | None = None) -> pd.DataFrame:
-    """Busca todos os registros de uma tabela e retorna como DataFrame."""
+    """Busca todos os registros de uma tabela e retorna como DataFrame.
+
+    Se a tabela estiver vazia, retorna um DataFrame vazio mas já com as
+    colunas corretas, para que filtros como df["coluna"] não quebrem.
+    """
     client = get_client()
     query = client.table(table).select("*")
     if order_by:
         query = query.order(order_by)
     response = query.execute()
     data = response.data or []
+    if not data:
+        return pd.DataFrame(columns=TABLE_COLUMNS.get(table, []))
     return pd.DataFrame(data)
 
 
@@ -79,7 +111,10 @@ def servidor_disponivel(servidor_id: int, data_alvo: date) -> tuple[bool, str]:
     operacoes = fetch_table("operacoes")
     participantes = fetch_table("operacao_participantes")
     if not operacoes.empty and not participantes.empty:
-        ops_do_dia = operacoes[pd.to_datetime(operacoes["data"]).dt.date == data_alvo]
+        ops_do_dia = operacoes[
+            (pd.to_datetime(operacoes["data_inicio"]).dt.date <= data_alvo)
+            & (pd.to_datetime(operacoes["data_fim"]).dt.date >= data_alvo)
+        ]
         if not ops_do_dia.empty:
             ids_ops_do_dia = ops_do_dia["id"].tolist()
             conflito_op = participantes[
@@ -92,6 +127,19 @@ def servidor_disponivel(servidor_id: int, data_alvo: date) -> tuple[bool, str]:
     return True, "Disponível"
 
 
+def servidor_disponivel_periodo(
+    servidor_id: int, data_inicio: date, data_fim: date
+) -> tuple[bool, str]:
+    """Verifica disponibilidade do servidor em todos os dias de um período."""
+    dia = data_inicio
+    while dia <= data_fim:
+        disponivel, motivo = servidor_disponivel(servidor_id, dia)
+        if not disponivel:
+            return False, f"{motivo} (dia {dia})"
+        dia += timedelta(days=1)
+    return True, "Disponível"
+
+
 def viatura_disponivel(viatura_id: int, data_alvo: date) -> tuple[bool, str]:
     """Verifica se uma viatura já está alocada em outra operação na mesma data."""
     operacoes = fetch_table("operacoes")
@@ -99,7 +147,10 @@ def viatura_disponivel(viatura_id: int, data_alvo: date) -> tuple[bool, str]:
     if operacoes.empty or participantes.empty:
         return True, "Disponível"
 
-    ops_do_dia = operacoes[pd.to_datetime(operacoes["data"]).dt.date == data_alvo]
+    ops_do_dia = operacoes[
+        (pd.to_datetime(operacoes["data_inicio"]).dt.date <= data_alvo)
+        & (pd.to_datetime(operacoes["data_fim"]).dt.date >= data_alvo)
+    ]
     if ops_do_dia.empty:
         return True, "Disponível"
 
@@ -110,4 +161,17 @@ def viatura_disponivel(viatura_id: int, data_alvo: date) -> tuple[bool, str]:
     ]
     if not conflito.empty:
         return False, "Viatura já está escalada em outra operação nesta data."
+    return True, "Disponível"
+
+
+def viatura_disponivel_periodo(
+    viatura_id: int, data_inicio: date, data_fim: date
+) -> tuple[bool, str]:
+    """Verifica disponibilidade da viatura em todos os dias de um período."""
+    dia = data_inicio
+    while dia <= data_fim:
+        disponivel, motivo = viatura_disponivel(viatura_id, dia)
+        if not disponivel:
+            return False, f"{motivo} (dia {dia})"
+        dia += timedelta(days=1)
     return True, "Disponível"

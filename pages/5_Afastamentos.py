@@ -1,5 +1,5 @@
 import streamlit as st
-from datetime import date
+from datetime import date, timedelta
 from utils.db import fetch_table, insert_row, delete_row
 
 st.set_page_config(page_title="Afastamentos - SIGOP", page_icon="🏖️", layout="wide")
@@ -21,7 +21,10 @@ with tab_lista:
         st.info("Nenhum afastamento cadastrado ainda.")
     else:
         exibir = afastamentos.merge(
-            servidores[["id", "nome"]], left_on="servidor_id", right_on="id", how="left"
+            servidores[["id", "nome"]].rename(columns={"id": "servidor_ref"}),
+            left_on="servidor_id",
+            right_on="servidor_ref",
+            how="left",
         )
         filtro_tipo = st.multiselect(
             "Filtrar por tipo",
@@ -51,18 +54,39 @@ with tab_novo:
     if servidores.empty:
         st.warning("Cadastre servidores primeiro na página 'Efetivo'.")
     else:
+        modo_periodo = st.radio(
+            "Como você quer definir o período?",
+            ["Por quantidade de dias", "Por datas de início e fim"],
+            horizontal=True,
+        )
+
         with st.form("novo_afastamento", clear_on_submit=True):
             servidor_id = st.selectbox(
                 "Servidor*",
                 options=servidores["id"].tolist(),
                 format_func=lambda x: servidores[servidores["id"] == x]["nome"].values[0],
             )
-            tipo = st.selectbox("Tipo*", ["Férias", "Folga", "Licença"])
-            col1, col2 = st.columns(2)
-            with col1:
-                data_inicio = st.date_input("Data de início*", value=date.today())
-            with col2:
-                data_fim = st.date_input("Data de fim*", value=date.today())
+            tipo = st.selectbox("Tipo*", ["Férias", "Folga", "Licença", "Folga Operacional"])
+
+            if modo_periodo == "Por quantidade de dias":
+                col1, col2 = st.columns(2)
+                with col1:
+                    data_inicio = st.date_input(
+                        "Data em que a folga/afastamento começa*", value=date.today()
+                    )
+                with col2:
+                    quantidade_dias = st.number_input(
+                        "Quantidade de dias*", min_value=1, max_value=90, value=1, step=1
+                    )
+                data_fim = data_inicio + timedelta(days=int(quantidade_dias) - 1)
+                st.caption(f"📅 Período calculado: {data_inicio} até {data_fim}")
+            else:
+                col1, col2 = st.columns(2)
+                with col1:
+                    data_inicio = st.date_input("Data de início*", value=date.today())
+                with col2:
+                    data_fim = st.date_input("Data de fim*", value=date.today())
+
             observacoes = st.text_area("Observações")
 
             enviado = st.form_submit_button("➕ Cadastrar afastamento")
@@ -81,5 +105,7 @@ with tab_novo:
                             "observacoes": observacoes,
                         },
                     )
-                    st.success("Afastamento cadastrado com sucesso!")
+                    st.success(
+                        f"Afastamento cadastrado com sucesso! ({data_inicio} até {data_fim})"
+                    )
                     st.rerun()

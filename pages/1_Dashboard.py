@@ -64,11 +64,11 @@ with col_a:
 with col_b:
     st.subheader("🚨 Próximas operações")
     if not operacoes.empty:
-        proximas = operacoes[pd.to_datetime(operacoes["data"]).dt.date >= hoje]
-        proximas = proximas.sort_values("data").head(5)
+        proximas = operacoes[pd.to_datetime(operacoes["data_fim"]).dt.date >= hoje]
+        proximas = proximas.sort_values("data_inicio").head(5)
         if not proximas.empty:
             st.dataframe(
-                proximas[["nome", "data", "horario", "local", "status"]],
+                proximas[["nome", "data_inicio", "data_fim", "horario", "local", "status"]],
                 use_container_width=True,
             )
         else:
