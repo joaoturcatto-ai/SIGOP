@@ -1,4 +1,4 @@
- """
+"""
 Camada de acesso ao banco de dados (Supabase) para o SIGOP.
 Todas as páginas importam funções deste módulo em vez de falar
 diretamente com o Supabase - isso deixa o código mais fácil de manter.
@@ -18,10 +18,7 @@ def get_client() -> Client:
     return create_client(url, key)
 
 
-# Colunas esperadas de cada tabela. Usado para que o DataFrame retornado
-# por fetch_table() nunca fique "sem colunas" quando a tabela está vazia -
-# isso evita KeyError ao filtrar (ex: participantes["operacao_id"] == x)
-# em telas que ainda não têm nenhum registro cadastrado.
+# Colunas esperadas de cada tabela.
 TABLE_COLUMNS = {
     "servidores": [
         "id", "nome", "matricula", "cargo", "equipe", "telefone",
@@ -45,11 +42,7 @@ TABLE_COLUMNS = {
 
 
 def fetch_table(table: str, order_by: str | None = None) -> pd.DataFrame:
-    """Busca todos os registros de uma tabela e retorna como DataFrame.
-
-    Se a tabela estiver vazia, retorna um DataFrame vazio mas já com as
-    colunas corretas, para que filtros como df["coluna"] não quebrem.
-    """
+    """Busca todos os registros de uma tabela e retorna como DataFrame."""
     client = get_client()
     query = client.table(table).select("*")
     if order_by:
@@ -83,11 +76,7 @@ def delete_row(table: str, row_id: int) -> dict:
 
 
 def servidor_disponivel(servidor_id: int, data_alvo: date) -> tuple[bool, str]:
-    """
-    Verifica se um servidor está disponível em uma data específica,
-    checando afastamentos, CQH e operações já agendadas.
-    Retorna (disponivel: bool, motivo: str).
-    """
+    """Verifica se um servidor está disponível em uma data específica."""
     afastamentos = fetch_table("afastamentos")
     if not afastamentos.empty:
         conflito = afastamentos[
@@ -167,14 +156,6 @@ def viatura_disponivel(viatura_id: int, data_alvo: date) -> tuple[bool, str]:
 def viatura_disponivel_periodo(
     viatura_id: int, data_inicio: date, data_fim: date
 ) -> tuple[bool, str]:
-    """Verifica disponibilidade da viatura em todos os dias de um período."""
-    dia = data_inicio
-    while dia <= data_fim:
-        disponivel, motivo = viatura_disponivel(viatura_id, dia)
-        if not disponivel:
-            return False, f"{motivo} (dia {dia})"
-        dia += timedelta(days=1)
-    return True, "Disponível"
     """Verifica disponibilidade da viatura em todos os dias de um período."""
     dia = data_inicio
     while dia <= data_fim:
