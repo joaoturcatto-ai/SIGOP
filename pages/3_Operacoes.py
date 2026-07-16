@@ -11,13 +11,13 @@ st.title("🎯 Gestão de Operações")
 df_operacoes = fetch_table("operacoes")
 df_servidores = fetch_table("servidores")
 df_viaturas = fetch_table("viaturas")
-df_equipes = fetch_table("equipes_operacoes")  # Ajuste o nome se no seu banco for diferente (ex: "escalas")
+df_equipes = fetch_table("equipes_operacoes")
 
-# Mapeamentos para exibição amigável
+# Mapeamentos de apoio
 mapa_servidores = {row["id"]: f"{row['nome']} ({row['cargo']})" for _, row in df_servidores.iterrows()} if not df_servidores.empty else {}
-mapa_viaturas = {row["id"]: f"{row['identificacao']} - {row['modelo']} ({row.get('placa_oficial') or row.get('placa_reservada') or 'S/P'})" for _, row in df_viaturas.iterrows()} if not df_viaturas.empty else {}
+mapa_viaturas = {row["id"]: f"{row['identificacao']} — {row.get('placa_oficial') or row.get('placa_reservada') or 'Sem Placa'}" for _, row in df_viaturas.iterrows()} if not df_viaturas.empty else {}
 
-# Abas principais: Gerenciar Existentes ou Cadastrar Nova
+# Abas principais
 tab_gerenciar, tab_cadastrar = st.tabs(["⚙️ Gerenciar e Editar Operação", "➕ Cadastrar Nova Operação"])
 
 # --- ABA 1: GERENCIAR, EDITAR E GERAR PDF ---
@@ -31,17 +31,14 @@ with tab_gerenciar:
         id_op_selecionada = st.selectbox("Operações Cadastradas:", options=list(opcoes_ops.keys()), format_func=lambda x: opcoes_ops[x])
         
         if id_op_selecionada:
-            # Obtém a operação selecionada diretamente do banco atualizado
             op_sel = df_operacoes[df_operacoes["id"] == id_op_selecionada].iloc[0]
             
-            # --- SEÇÃO 1: FORMULÁRIO DE EDIÇÃO DOS DADOS DA OPERAÇÃO ---
+            # --- SEÇÃO 1: FORMULÁRIO DE EDIÇÃO ---
             st.markdown("### 📝 Editar Dados da Operação")
             
-            # Tratamento de datas e horários para o formulário
             data_ini_padrao = pd.to_datetime(op_sel.get("data_inicio", date.today())).date()
             data_fim_padrao = pd.to_datetime(op_sel.get("data_fim", date.today())).date()
             
-            # Converte string de hora para o tipo datetime.time
             hora_raw = op_sel.get("horario", "08:00:00")
             try:
                 hora_padrao = datetime.strptime(str(hora_raw), "%H:%M:%S").time() if hora_raw else time(8, 0)
@@ -59,7 +56,6 @@ with tab_gerenciar:
                     edit_local = st.text_input("Local / Ponto de Encontro", value=str(op_sel.get("local", "")))
                     edit_cidade = st.text_input("Cidade", value=str(op_sel.get("cidade", "")))
                     
-                    # Seleção de Delegado Responsável
                     delegados = df_servidores[df_servidores["cargo"].str.contains("Delegado", case=False, na=False)] if not df_servidores.empty else pd.DataFrame()
                     lista_del_id = list(delegados["id"].unique()) if not delegados.empty else []
                     mapa_del = {row["id"]: row["nome"] for _, row in delegados.iterrows()} if not delegados.empty else {}
@@ -74,7 +70,6 @@ with tab_gerenciar:
                     edit_data_fim = st.date_input("Data de Fim", value=data_fim_padrao)
                     edit_horario = st.time_input("Horário", value=hora_padrao)
                     
-                    # Seleção de Status
                     status_atual = str(op_sel.get("status", "Planejada"))
                     lista_status = ["Planejada", "Em Andamento", "Concluída", "Cancelada"]
                     idx_status = lista_status.index(status_atual) if status_atual in lista_status else 0
@@ -117,57 +112,86 @@ with tab_gerenciar:
 
             st.markdown("---")
             
-            # --- SEÇÃO 2: EQUIPE ESCALADA (VISUALIZAÇÃO, EDIÇÃO E EXCLUSÃO) ---
-            st.markdown("### 👥 Equipe Escalada")
+            # --- SEÇÃO 2: EQUIPES SEPARADAS E ESCALADAS ---
+            st.markdown("### 👥 Equipes e Efetivos")
             
-            # Filtrar equipe escalada nesta operação
+            # Filtra os dados da equipe escalada nesta operação
             df_equipe_op = pd.DataFrame()
             if not df_equipes.empty:
                 df_equipe_op = df_equipes[df_equipes["operacao_id"] == id_op_selecionada].copy()
             
+            # Agrupa e mostra as equipes (Equipe 01, Equipe 02, etc.)
+            equipes_existentes = ["Equipe 01", "Equipe 02", "Equipe 03", "Equipe 04", "Equipe 05"]
+            
+            # Mostra as equipes que possuem membros cadastrados
             if not df_equipe_op.empty:
-                df_equipe_op["Servidor"] = df_equipe_op["servidor_id"].map(mapa_servidores)
-                df_equipe_op["Viatura"] = df_equipe_op["viatura_id"].map(mapa_viaturas).fillna("Sem Viatura")
-                df_equipe_op = df_equipe_op.rename(columns={"nome_equipe": "Nome da Equipe"})
+                for eq_nome in sorted(df_equipe_op["nome_equipe"].unique()):
+                    membros_eq = df_equipe_op[df_equipe_op["nome_equipe"] == eq_nome]
+                    
+                    # Tenta descobrir a viatura associada à equipe (pega do primeiro membro que tiver viatura)
+                    vtr_id_eq = None
+                    for _, row_m in membros_eq.iterrows():
+                        if pd.notna(row_m.get("viatura_id")):
+                            vtr_id_eq = row_m["viatura_id"]
+                            break
+                    
+                    vtr_txt = mapa_viaturas.get(vtr_id_eq, "Sem Viatura designada")
+                    
+                    # Caixa visual para cada equipe
+                    with st.container(border=True):
+                        st.markdown(f"#### 🏷️ {eq_nome} — 🚗 Viatura: **{vtr_txt}**")
+                        
+                        # Mostra os membros
+                        dados_membros_exibir = []
+                        for _, row_m in membros_eq.iterrows():
+                            dados_membros_exibir.append({
+                                "ID Registro": row_m["id"],
+                                "Policial": mapa_servidores.get(row_m["servidor_id"], "Não encontrado"),
+                            })
+                        
+                        df_eq_grid = pd.DataFrame(dados_membros_exibir)
+                        st.dataframe(df_eq_grid, use_container_width=True, hide_index=True)
+            else:
+                st.info("Nenhum policial escalado em equipe ainda.")
+            
+            # Formulário para Adicionar Policial em uma Equipe
+            st.markdown("#### ➕ Adicionar Policial à Equipe")
+            with st.form("form_add_policial_equipe"):
+                col_eq1, col_eq2, col_eq3 = st.columns(3)
+                with col_eq1:
+                    add_servidor = st.selectbox("Selecione o Policial", options=list(mapa_servidores.keys()), format_func=lambda x: mapa_servidores[x])
+                with col_eq2:
+                    add_nome_equipe = st.selectbox("Escolha a Equipe", options=equipes_existentes)
+                with col_eq3:
+                    add_viatura = st.selectbox("Defina a Viatura da Equipe", options=[None] + list(mapa_viaturas.keys()), format_func=lambda x: "Nenhuma Viatura" if x is None else mapa_viaturas[x])
                 
-                # Tabela organizada de exibição
-                st.dataframe(df_equipe_op[["id", "Servidor", "Nome da Equipe", "Viatura"]], use_container_width=True, hide_index=True)
+                btn_confirmar_membro = st.form_submit_button("➕ Vincular à Equipe")
                 
-                # Remover servidor da equipe
-                with st.expander("🗑️ Remover integrante da escala"):
-                    opcoes_rem_membro = {
-                        row["id"]: f"{row['Servidor']} — {row['Nome da Equipe']}"
+                if btn_confirmar_membro:
+                    dados_membro = {
+                        "operacao_id": int(id_op_selecionada),
+                        "servidor_id": int(add_servidor),
+                        "nome_equipe": add_nome_equipe,
+                        "viatura_id": int(add_viatura) if add_viatura else None
+                    }
+                    resultado_link = insert_row("equipes_operacoes", dados_membro)
+                    if resultado_link:
+                        st.toast("Policial adicionado com sucesso!", icon="✔️")
+                        st.rerun()
+                    else:
+                        st.error("❌ Erro ao salvar integrante. Verifique se executou o passo SQL no Supabase.")
+
+            # Opção de remoção de policial
+            if not df_equipe_op.empty:
+                with st.expander("🗑️ Remover Policial de uma Equipe"):
+                    opcoes_remover = {
+                        row["id"]: f"{mapa_servidores.get(row['servidor_id'], 'N/D')} — {row['nome_equipe']}"
                         for _, row in df_equipe_op.iterrows()
                     }
-                    membro_remover_id = st.selectbox("Selecione o servidor para remover da operação:", options=list(opcoes_rem_membro.keys()), format_func=lambda x: opcoes_rem_membro[x])
-                    if st.button("❌ Remover Servidor da Operação"):
+                    membro_remover_id = st.selectbox("Selecione o integrante para remover:", options=list(opcoes_remover.keys()), format_func=lambda x: opcoes_remover[x])
+                    if st.button("❌ Confirmar Remoção da Equipe"):
                         delete_row("equipes_operacoes", membro_remover_id)
-                        st.toast("Servidor removido da equipe!", icon="🗑️")
-                        st.rerun()
-            else:
-                st.info("Nenhum servidor escalado nesta operação ainda.")
-            
-            # Adicionar novos servidores à equipe
-            with st.expander("➕ Adicionar servidor à equipe"):
-                with st.form("form_add_equipe"):
-                    col_add1, col_add2, col_add3 = st.columns(3)
-                    with col_add1:
-                        add_servidor = st.selectbox("Servidor", options=list(mapa_servidores.keys()), format_func=lambda x: mapa_servidores[x])
-                    with col_add2:
-                        add_nome_equipe = st.text_input("Nome da equipe (ex: Equipe Alpha, Operacional)", value="Equipe Alfa")
-                    with col_add3:
-                        add_viatura = st.selectbox("Viatura (opcional)", options=[None] + list(mapa_viaturas.keys()), format_func=lambda x: "Nenhuma" if x is None else mapa_viaturas[x])
-                    
-                    btn_add_membro = st.form_submit_button("➕ Confirmar Escala")
-                    if btn_add_membro:
-                        dados_membro = {
-                            "operacao_id": int(id_op_selecionada),
-                            "servidor_id": int(add_servidor),
-                            "nome_equipe": add_nome_equipe,
-                            "viatura_id": int(add_viatura) if add_viatura else None
-                        }
-                        insert_row("equipes_operacoes", dados_membro)
-                        st.toast("Membro adicionado!", icon="✔️")
+                        st.toast("Integrante removido!", icon="🗑️")
                         st.rerun()
 
             st.markdown("---")
@@ -175,7 +199,6 @@ with tab_gerenciar:
             # --- SEÇÃO 3: PDF DA ORDEM DE SERVIÇO ---
             st.markdown("### 📄 Relatório / Ordem de Serviço")
             
-            # Prepara os dados para o PDF
             nome_operacao = op_sel.get("nome", "Operação Sem Nome")
             cidade_op = op_sel.get("cidade", "N/D")
             local_op = op_sel.get("local", "N/D")
@@ -186,15 +209,24 @@ with tab_gerenciar:
             objetivo_op = op_sel.get("objetivo", "Não detalhado")
             briefing_op = op_sel.get("briefing", "Não detalhado")
             
-            # Montar a lista de equipe formatada para texto
-            texto_equipe = ""
+            # Monta a estrutura de equipes para o PDF
+            texto_equipes_pdf = ""
             if not df_equipe_op.empty:
-                for _, row in df_equipe_op.iterrows():
-                    texto_equipe += f"- {row['Servidor']} | Equipe: {row['Nome da Equipe']} | Viatura: {row['Viatura']}\n"
+                for eq_nome in sorted(df_equipe_op["nome_equipe"].unique()):
+                    membros_eq = df_equipe_op[df_equipe_op["nome_equipe"] == eq_nome]
+                    vtr_id_eq = None
+                    for _, row_m in membros_eq.iterrows():
+                        if pd.notna(row_m.get("viatura_id")):
+                            vtr_id_eq = row_m["viatura_id"]
+                            break
+                    vtr_txt = mapa_viaturas.get(vtr_id_eq, "Sem Viatura")
+                    
+                    texto_equipes_pdf += f"\n👉 **{eq_nome}** (Viatura: {vtr_txt})\n"
+                    for _, row_m in membros_eq.iterrows():
+                        texto_equipes_pdf += f"  - {mapa_servidores.get(row_m['servidor_id'], 'Policial')}\n"
             else:
-                texto_equipe = "Nenhum efetivo escalado até o momento."
+                texto_equipes_pdf = "Nenhuma equipe montada para esta operação."
 
-            # Função simples para renderizar HTML estilizado de visualização prévia e exportação rápida
             html_content = f"""
             <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #ddd; background-color: white; color: black; border-radius: 5px;">
                 <h2 style="text-align: center; margin-bottom: 5px; color: #1a365d;">ORDEM DE SERVIÇO OPERACIONAL</h2>
@@ -226,8 +258,8 @@ with tab_gerenciar:
                 <h4 style="color: #1a365d; border-bottom: 1px solid #ddd; padding-bottom: 5px;">2. BRIEFING / INSTRUÇÕES GERAIS</h4>
                 <p style="text-align: justify; white-space: pre-line;">{briefing_op}</p>
                 
-                <h4 style="color: #1a365d; border-bottom: 1px solid #ddd; padding-bottom: 5px;">3. EFETIVO E LOGÍSTICA ESCALADA</h4>
-                <p style="white-space: pre-line;">{texto_equipe}</p>
+                <h4 style="color: #1a365d; border-bottom: 1px solid #ddd; padding-bottom: 5px;">3. DISTRIBUIÇÃO DAS EQUIPES</h4>
+                <p style="white-space: pre-line;">{texto_equipes_pdf}</p>
                 
                 <br><br>
                 <div style="text-align: center; margin-top: 30px;">
@@ -241,7 +273,6 @@ with tab_gerenciar:
             with st.expander("👁️ Visualizar Prévia do Documento"):
                 st.html(html_content)
             
-            # Botão de impressão nativo do navegador
             st.markdown(
                 f"""
                 <a href="javascript:window.print()" style="text-decoration: none;">
@@ -259,7 +290,7 @@ with tab_gerenciar:
                     </button>
                 </a>
                 <p style="font-size: 11px; text-align: center; color: gray; margin-top: 5px;">
-                    Ao clicar no botão, utilize a opção "Salvar como PDF" nas configurações de destino da sua impressora.
+                    Utilize "Salvar como PDF" nas configurações de destino da sua impressora.
                 </p>
                 """, 
                 unsafe_allow_html=True
