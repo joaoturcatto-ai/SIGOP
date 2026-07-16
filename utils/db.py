@@ -1,4 +1,4 @@
- """
+"""
 Camada de acesso ao banco de dados (Supabase) para o SIGOP.
 Todas as páginas importam funções deste módulo em vez de falar
 diretamente com o Supabase - isso deixa o código mais fácil de manter.
