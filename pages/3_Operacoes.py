@@ -33,8 +33,8 @@ with tab_gerenciar:
         if id_op_selecionada:
             op_sel = df_operacoes[df_operacoes["id"] == id_op_selecionada].iloc[0]
             
-            # --- SEÇÃO 1: FORMULÁRIO DE EDIÇÃO ---
-            st.markdown("### 📝 Editar Dados da Operação")
+            # --- SEÇÃO 1: FORMULÁRIO DE EDIÇÃO GERAL ---
+            st.markdown("### 📝 Editar Dados Gerais da Operação")
             
             data_ini_padrao = pd.to_datetime(op_sel.get("data_inicio", date.today())).date()
             data_fim_padrao = pd.to_datetime(op_sel.get("data_fim", date.today())).date()
@@ -111,17 +111,64 @@ with tab_gerenciar:
                     st.rerun()
 
             st.markdown("---")
-            
-            # --- SEÇÃO 2: EQUIPES SEPARADAS E ESCALADAS ---
-            st.markdown("### 👥 Equipes e Efetivos")
+
+            # --- NOVA SEÇÃO: CONFIGURAÇÃO DE FOLGA POR EQUIPE ---
+            st.markdown("### 🌴 Configuração de Folga por Equipe")
             
             df_equipe_op = pd.DataFrame()
             if not df_equipes.empty:
                 df_equipe_op = df_equipes[df_equipes["operacao_id"] == id_op_selecionada].copy()
             
+            if df_equipe_op.empty:
+                st.info("Cadastre policiais em alguma equipe abaixo antes de definir as folgas.")
+            else:
+                lista_equipes_da_op = sorted(list(df_equipe_op["nome_equipe"].unique()))
+                
+                # Seleciona qual equipe vai configurar a folga
+                equipe_para_folga = st.selectbox("Selecione qual equipe deseja configurar a folga:", options=lista_equipes_da_op)
+                
+                # Pega as configurações atuais da equipe selecionada para preencher por padrão
+                membros_selecionados = df_equipe_op[df_equipe_op["nome_equipe"] == equipe_para_folga]
+                registro_base = membros_selecionados.iloc[0]
+                
+                possui_folga_atual = bool(registro_base.get("possui_folga", False))
+                folga_data_atual = pd.to_datetime(registro_base.get("folga_data", date.today())).date() if registro_base.get("folga_data") else date.today()
+                
+                duracoes_possiveis = ["Meio período (Matutino)", "Meio período (Vespertino)", "01 dia", "02 dias", "03 dias"]
+                duracao_atual = registro_base.get("folga_duracao", "01 dia")
+                idx_duracao = duracoes_possiveis.index(duracao_atual) if duracao_atual in duracoes_possiveis else 2
+                
+                with st.form("form_config_folga_equipe"):
+                    col_cf1, col_cf2, col_cf3 = st.columns([1.5, 2, 2.5])
+                    with col_cf1:
+                        definir_possui_folga = st.checkbox("Esta equipe terá direito a folga?", value=possui_folga_atual)
+                    with col_cf2:
+                        definir_folga_data = st.date_input("Data da Folga", value=folga_data_atual, disabled=not definir_possui_folga)
+                    with col_cf3:
+                        definir_folga_duracao = st.selectbox("Período / Duração", options=duracoes_possiveis, index=idx_duracao, disabled=not definir_possui_folga)
+                    
+                    btn_salvar_folga_equipe = st.form_submit_button("💾 Salvar Configurações de Folga para a " + equipe_para_folga)
+                    
+                    if btn_salvar_folga_equipe:
+                        # Atualiza TODOS os membros pertencentes à equipe selecionada de uma só vez
+                        for _, row_membro in membros_selecionados.iterrows():
+                            dados_folga_atualizar = {
+                                "possui_folga": bool(definir_possui_folga),
+                                "folga_data": definir_folga_data.isoformat() if definir_possui_folga else None,
+                                "folga_duracao": definir_folga_duracao if definir_possui_folga else None
+                            }
+                            update_row("equipes_operacoes", row_membro["id"], dados_folga_atualizar)
+                        
+                        st.toast(f"Folgas da {equipe_para_folga} atualizadas com sucesso!", icon="🌴")
+                        st.rerun()
+
+            st.markdown("---")
+            
+            # --- SEÇÃO 2: EQUIPES SEPARADAS E ESCALADAS ---
+            st.markdown("### 👥 Equipes e Efetivos")
+            
             equipes_existentes = [f"Equipe {i:02d}" for i in range(1, 21)]
             
-            # Mostra as equipes agrupadas na tela com informações individuais de folga
             if not df_equipe_op.empty:
                 for eq_nome in sorted(df_equipe_op["nome_equipe"].unique()):
                     membros_eq = df_equipe_op[df_equipe_op["nome_equipe"] == eq_nome]
@@ -129,7 +176,7 @@ with tab_gerenciar:
                     # Procura se há um líder configurado nesta equipe
                     membro_lider = membros_eq[membros_eq.get("is_lider", False) == True]
                     lider_txt = "Não definido"
-                    if not miembro_lider.empty:
+                    if not membro_lider.empty:
                         lider_id = membro_lider.iloc[0]["servidor_id"]
                         lider_txt = mapa_servidores.get(lider_id, "Não encontrado")
                     
@@ -141,26 +188,25 @@ with tab_gerenciar:
                             break
                     vtr_txt = mapa_viaturas.get(vtr_id_eq, "Sem Viatura designada")
                     
+                    # Recupera as folgas da equipe a partir do primeiro registro
+                    reg_base_eq = membros_eq.iloc[0]
+                    folga_status_txt = "❌ Sem folga registrada"
+                    if reg_base_eq.get("possui_folga", False):
+                        folga_dt_f = pd.to_datetime(reg_base_eq.get("folga_data")).strftime("%d/%m/%Y") if reg_base_eq.get("folga_data") else "N/D"
+                        folga_status_txt = f"🌴 **{reg_base_eq.get('folga_duracao', '01 dia')}** no dia **{folga_dt_f}**"
+                    
                     # Container Visual da Equipe
                     with st.container(border=True):
                         st.markdown(f"#### 🏷️ {eq_nome} — 👑 Líder: **{lider_txt}** — 🚗 Viatura: **{vtr_txt}**")
+                        st.markdown(f"Status da Folga da Equipe: {folga_status_txt}")
                         
                         dados_membros_exibir = []
                         for _, row_m in membros_eq.iterrows():
                             cargo_funcao = "👑 LÍDER DE EQUIPE" if row_m.get("is_lider", False) else "Membro"
-                            
-                            # Formata a folga individual de cada integrante
-                            if row_m.get("possui_folga", False):
-                                dt_f = pd.to_datetime(row_m.get("folga_data")).strftime("%d/%m/%Y") if row_m.get("folga_data") else "N/D"
-                                folga_ind_txt = f"🌴 {row_m.get('folga_duracao', '01 dia')} ({dt_f})"
-                            else:
-                                folga_ind_txt = "Sem folga programada"
-                            
                             dados_membros_exibir.append({
                                 "ID Registro": row_m["id"],
                                 "Policial": mapa_servidores.get(row_m["servidor_id"], "Não encontrado"),
-                                "Função na Equipe": cargo_funcao,
-                                "Folga Escolhida": folga_ind_txt
+                                "Função na Equipe": cargo_funcao
                             })
                         
                         df_eq_grid = pd.DataFrame(dados_membros_exibir)
@@ -168,27 +214,8 @@ with tab_gerenciar:
             else:
                 st.info("Nenhum policial escalado em equipe ainda.")
             
-            # Formulário para Adicionar Policial e Configurar a Folga de Maneira Individual
-            st.markdown("#### ➕ Adicionar Policial à Equipe e Definir sua Folga")
-            
-            # Estado para habilitar as opções de folga individual do policial atual
-            policial_quer_folga = st.checkbox("🌴 Este policial vai agendar uma folga individual?")
-            
-            col_f1, col_f2 = st.columns(2)
-            with col_f1:
-                input_folga_data = st.date_input("Escolha a Data da Folga deste Policial", value=date.today(), disabled=not policial_quer_folga)
-            with col_f2:
-                lista_folgas_duracao = [
-                    "Meio período (Matutino)",
-                    "Meio período (Vespertino)",
-                    "01 dia",
-                    "02 dias",
-                    "03 dias"
-                ]
-                input_folga_duracao = st.selectbox("Duração da Folga Escolhida", options=lista_folgas_duracao, index=2, disabled=not policial_quer_folga)
-                
-            st.markdown("---")
-            
+            # Formulário para Adicionar Policial à Equipe
+            st.markdown("#### ➕ Adicionar Policial à Equipe")
             with st.form("form_add_policial_equipe"):
                 col_eq1, col_eq2, col_eq3 = st.columns(3)
                 with col_eq1:
@@ -198,33 +225,42 @@ with tab_gerenciar:
                 with col_eq3:
                     add_viatura = st.selectbox("Defina a Viatura da Equipe", options=[None] + list(mapa_viaturas.keys()), format_func=lambda x: "Nenhuma Viatura" if x is None else mapa_viaturas[x])
                 
-                # Checkbox para marcar se ele é o líder
                 add_is_lider = st.checkbox("👑 Definir este policial como Líder da Equipe selecionada")
                 
-                btn_confirmar_membro = st.form_submit_button("➕ Vincular Policial e Agendar Folga")
+                btn_confirmar_membro = st.form_submit_button("➕ Vincular à Equipe")
                 
                 if btn_confirmar_membro:
-                    # Se este novo membro for líder, remove a liderança de qualquer outro membro antigo desta mesma equipe
+                    # Se este novo membro for líder, desmarca os anteriores
                     if add_is_lider and not df_equipe_op.empty:
                         lideres_antigos = df_equipe_op[(df_equipe_op["nome_equipe"] == add_nome_equipe) & (df_equipe_op.get("is_lider", False) == True)]
                         for _, row_antigo in lideres_antigos.iterrows():
                             update_row("equipes_operacoes", row_antigo["id"], {"is_lider": False})
                     
-                    # Insere o novo membro já com os dados de folga individuais dele
+                    # Puxa informações de folgas existentes para herdar automaticamente para o novo membro da equipe
+                    membros_ja_na_eq = df_equipe_op[df_equipe_op["nome_equipe"] == add_nome_equipe] if not df_equipe_op.empty else pd.DataFrame()
+                    tem_folga_herdada = False
+                    dt_folga_herdada = None
+                    dur_folga_herdada = None
+                    if not membros_ja_na_eq.empty:
+                        ref_herd = membros_ja_na_eq.iloc[0]
+                        tem_folga_herdada = bool(ref_herd.get("possui_folga", False))
+                        dt_folga_herdada = ref_herd.get("folga_data")
+                        dur_folga_herdada = ref_herd.get("folga_duracao")
+
                     dados_membro = {
                         "operacao_id": int(id_op_selecionada),
                         "servidor_id": int(add_servidor),
                         "nome_equipe": add_nome_equipe,
                         "viatura_id": int(add_viatura) if add_viatura else None,
                         "is_lider": bool(add_is_lider),
-                        "possui_folga": bool(policial_quer_folga),
-                        "folga_data": input_folga_data.isoformat() if policial_quer_folga else None,
-                        "folga_duracao": input_folga_duracao if policial_quer_folga else None
+                        "possui_folga": tem_folga_herdada,
+                        "folga_data": dt_folga_herdada,
+                        "folga_duracao": dur_folga_herdada
                     }
                     
                     resultado_link = insert_row("equipes_operacoes", dados_membro)
                     if resultado_link:
-                        st.toast("Policial vinculado com sucesso com suas folgas configuradas!", icon="✔️")
+                        st.toast("Policial adicionado à equipe com sucesso!", icon="✔️")
                         st.rerun()
                     else:
                         st.error("❌ Erro ao salvar integrante.")
@@ -257,19 +293,16 @@ with tab_gerenciar:
             objetivo_op = op_sel.get("objetivo", "Não detalhado")
             briefing_op = op_sel.get("briefing", "Não detalhado")
             
-            # Monta equipes estruturadas para o PDF, com Líder e as Folgas Individuais detalhadas
             texto_equipes_pdf = ""
             if not df_equipe_op.empty:
                 for eq_nome in sorted(df_equipe_op["nome_equipe"].unique()):
                     membros_eq = df_equipe_op[df_equipe_op["nome_equipe"] == eq_nome]
                     
-                    # Busca Líder da equipe
                     lider_eq_membros = membros_eq[membros_eq.get("is_lider", False) == True]
                     lider_pdf_txt = "Não definido"
                     if not lider_eq_membros.empty:
                         lider_pdf_txt = mapa_servidores.get(lider_eq_membros.iloc[0]["servidor_id"], "Não encontrado")
                     
-                    # Busca Viatura
                     vtr_id_eq = None
                     for _, row_m in membros_eq.iterrows():
                         if pd.notna(row_m.get("viatura_id")):
@@ -277,23 +310,21 @@ with tab_gerenciar:
                             break
                     vtr_txt = mapa_viaturas.get(vtr_id_eq, "Sem Viatura")
                     
+                    # Pega a folga da equipe
+                    ref_eq = membros_eq.iloc[0]
+                    folga_info_pdf = "Não prevista"
+                    if ref_eq.get("possui_folga", False):
+                        folga_dt_fmtd = pd.to_datetime(ref_eq.get("folga_data")).strftime("%d/%m/%Y") if ref_eq.get("folga_data") else "N/D"
+                        folga_info_pdf = f"{ref_eq.get('folga_duracao', '01 dia')} no dia {folga_dt_fmtd}"
+                    
                     texto_equipes_pdf += f"\n👉 **{eq_nome}**\n"
                     texto_equipes_pdf += f"   • 👑 Líder: {lider_pdf_txt}\n"
                     texto_equipes_pdf += f"   • 🚗 Viatura: {vtr_txt}\n"
-                    texto_equipes_pdf += f"   • Integrantes e Folgas agendadas:\n"
-                    
+                    texto_equipes_pdf += f"   • 🌴 Folga da Equipe: {folga_info_pdf}\n"
+                    texto_equipes_pdf += f"   • Integrantes:\n"
                     for _, row_m in membros_eq.iterrows():
                         funcao_marcador = " [LÍDER]" if row_m.get("is_lider", False) else ""
-                        nome_policial = mapa_servidores.get(row_m['servidor_id'], 'Policial')
-                        
-                        # Formata o texto de folga individual no relatório
-                        if row_m.get("possui_folga", False):
-                            dt_f_txt = pd.to_datetime(row_m.get("folga_data")).strftime("%d/%m/%Y") if row_m.get("folga_data") else "N/D"
-                            folga_txt = f" (Folga: {row_m.get('folga_duracao', '01 dia')} em {dt_f_txt})"
-                        else:
-                            folga_txt = " (Sem Folga)"
-                            
-                        texto_equipes_pdf += f"     - {nome_policial}{funcao_marcador}{folga_txt}\n"
+                        texto_equipes_pdf += f"     - {mapa_servidores.get(row_m['servidor_id'], 'Policial')}{funcao_marcador}\n"
             else:
                 texto_equipes_pdf = "Nenhuma equipe montada para esta operação."
 
@@ -328,7 +359,7 @@ with tab_gerenciar:
                 <h4 style="color: #1a365d; border-bottom: 1px solid #ddd; padding-bottom: 5px;">2. BRIEFING / INSTRUÇÕES GERAIS</h4>
                 <p style="text-align: justify; white-space: pre-line;">{briefing_op}</p>
                 
-                <h4 style="color: #1a365d; border-bottom: 1px solid #ddd; padding-bottom: 5px;">3. DISTRIBUIÇÃO DAS EQUIPES E FOLGAS SELECIONADAS</h4>
+                <h4 style="color: #1a365d; border-bottom: 1px solid #ddd; padding-bottom: 5px;">3. DISTRIBUIÇÃO DAS EQUIPES E CONFIGURAÇÃO DE FOLGAS</h4>
                 <p style="white-space: pre-line;">{texto_equipes_pdf}</p>
                 
                 <br><br>
