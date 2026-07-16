@@ -1,166 +1,94 @@
-"""
-Camada de acesso ao banco de dados (Supabase) para o SIGOP.
-Todas as páginas importam funções deste módulo em vez de falar
-diretamente com o Supabase - isso deixa o código mais fácil de manter.
-"""
-
 import streamlit as st
 import pandas as pd
-from datetime import date, timedelta
-from supabase import create_client, Client
+from utils.db import select_all, insert_data
 
+st.set_page_config(page_title="Viaturas - SIGOP", layout="wide")
 
-@st.cache_resource(show_spinner=False)
-def get_client() -> Client:
-    """Cria (e reaproveita) o cliente do Supabase usando os Secrets."""
-    url = st.secrets["SUPABASE_URL"]
-    key = st.secrets["SUPABASE_KEY"]
-    return create_client(url, key)
+st.title("🚓 Gestão de Viaturas")
 
+# Criamos duas abas: Uma para listar as viaturas e outra para cadastrar novas
+tab_listar, tab_cadastrar = st.tabs(["📋 Viaturas Cadastradas", "➕ Cadastrar Nova Viatura"])
 
-# Colunas esperadas de cada tabela.
-TABLE_COLUMNS = {
-    "servidores": [
-        "id", "nome", "matricula", "cargo", "equipe", "telefone",
-        "situacao", "observacoes", "created_at",
-    ],
-    "viaturas": ["id", "identificacao", "modelo", "status", "tipo_placa", "created_at"],
-    "operacoes": [
-        "id", "nome", "data_inicio", "data_fim", "horario", "local", "cidade",
-        "delegado_responsavel", "objetivo", "briefing", "status", "created_at",
-    ],
-    "operacao_participantes": [
-        "id", "operacao_id", "servidor_id", "equipe", "viatura_id",
-        "folga_concedida", "created_at",
-    ],
-    "cqh": ["id", "data", "servidor_id", "equipe", "created_at"],
-    "afastamentos": [
-        "id", "servidor_id", "tipo", "data_inicio", "data_fim",
-        "observacoes", "created_at",
-    ],
-}
-
-
-def fetch_table(table: str, order_by: str | None = None) -> pd.DataFrame:
-    """Busca todos os registros de uma tabela e retorna como DataFrame."""
-    client = get_client()
-    query = client.table(table).select("*")
-    if order_by:
-        query = query.order(order_by)
-    response = query.execute()
-    data = response.data or []
-    if not data:
-        return pd.DataFrame(columns=TABLE_COLUMNS.get(table, []))
-    return pd.DataFrame(data)
-
-
-def insert_row(table: str, row: dict) -> dict:
-    """Insere um registro na tabela informada."""
-    client = get_client()
-    response = client.table(table).insert(row).execute()
-    return response.data
-
-
-def update_row(table: str, row_id: int, changes: dict) -> dict:
-    """Atualiza um registro existente pelo id."""
-    client = get_client()
-    response = client.table(table).update(changes).eq("id", row_id).execute()
-    return response.data
-
-
-def delete_row(table: str, row_id: int) -> dict:
-    """Remove um registro pelo id."""
-    client = get_client()
-    response = client.table(table).delete().eq("id", row_id).execute()
-    return response.data
-
-
-def servidor_disponivel(servidor_id: int, data_alvo: date) -> tuple[bool, str]:
-    """Verifica se um servidor está disponível em uma data específica."""
-    afastamentos = fetch_table("afastamentos")
-    if not afastamentos.empty:
-        conflito = afastamentos[
-            (afastamentos["servidor_id"] == servidor_id)
-            & (pd.to_datetime(afastamentos["data_inicio"]).dt.date <= data_alvo)
-            & (pd.to_datetime(afastamentos["data_fim"]).dt.date >= data_alvo)
+# --- ABA 1: LISTAR VIATURAS ---
+with tab_listar:
+    st.subheader("Frota de Viaturas")
+    
+    # Busca todas as viaturas registradas no banco de dados
+    viaturas_data = select_all("viaturas")
+    
+    if viaturas_data:
+        # Convertemos os dados para um DataFrame do Pandas para facilitar a exibição
+        df = pd.DataFrame(viaturas_data)
+        
+        # Renomeamos as colunas para que fiquem amigáveis na tabela do usuário
+        df_display = df.copy()
+        df_display = df_display.rename(columns={
+            "identificacao": "Prefixo / Identificação",
+            "modelo": "Modelo",
+            "tipo_placa": "Tipo de Placa",
+            "placa_oficial": "Placa Oficial",
+            "placa_reservada": "Placa Reservada (Fria)",
+            "status": "Status"
+        })
+        
+        # Selecionamos a ordem ideal de colunas para exibir
+        colunas_exibicao = [
+            "Prefixo / Identificação", 
+            "Modelo", 
+            "Placa Oficial", 
+            "Placa Reservada (Fria)", 
+            "Tipo de Placa", 
+            "Status"
         ]
-        if not conflito.empty:
-            tipo = conflito.iloc[0]["tipo"]
-            return False, f"Servidor está com {tipo} nesta data."
+        
+        # Filtramos para mostrar apenas as colunas que importam na tabela
+        df_display = df_display[[c for c in colunas_exibicao if c in df_display.columns]]
+        
+        # Exibe a tabela formatada de forma limpa
+        st.dataframe(df_display, use_container_width=True, hide_index=True)
+    else:
+        st.info("Nenhuma viatura cadastrada até o momento.")
 
-    cqh = fetch_table("cqh")
-    if not cqh.empty:
-        conflito_cqh = cqh[
-            (cqh["servidor_id"] == servidor_id)
-            & (pd.to_datetime(cqh["data"]).dt.date == data_alvo)
-        ]
-        if not conflito_cqh.empty:
-            return False, "Servidor já está escalado no CQH nesta data."
-
-    operacoes = fetch_table("operacoes")
-    participantes = fetch_table("operacao_participantes")
-    if not operacoes.empty and not participantes.empty:
-        ops_do_dia = operacoes[
-            (pd.to_datetime(operacoes["data_inicio"]).dt.date <= data_alvo)
-            & (pd.to_datetime(operacoes["data_fim"]).dt.date >= data_alvo)
-        ]
-        if not ops_do_dia.empty:
-            ids_ops_do_dia = ops_do_dia["id"].tolist()
-            conflito_op = participantes[
-                (participantes["servidor_id"] == servidor_id)
-                & (participantes["operacao_id"].isin(ids_ops_do_dia))
-            ]
-            if not conflito_op.empty:
-                return False, "Servidor já está escalado em outra operação nesta data."
-
-    return True, "Disponível"
-
-
-def servidor_disponivel_periodo(
-    servidor_id: int, data_inicio: date, data_fim: date
-) -> tuple[bool, str]:
-    """Verifica disponibilidade do servidor em todos os dias de um período."""
-    dia = data_inicio
-    while dia <= data_fim:
-        disponivel, motivo = servidor_disponivel(servidor_id, dia)
-        if not disponivel:
-            return False, f"{motivo} (dia {dia})"
-        dia += timedelta(days=1)
-    return True, "Disponível"
-
-
-def viatura_disponivel(viatura_id: int, data_alvo: date) -> tuple[bool, str]:
-    """Verifica se uma viatura já está alocada em outra operação na mesma data."""
-    operacoes = fetch_table("operacoes")
-    participantes = fetch_table("operacao_participantes")
-    if operacoes.empty or participantes.empty:
-        return True, "Disponível"
-
-    ops_do_dia = operacoes[
-        (pd.to_datetime(operacoes["data_inicio"]).dt.date <= data_alvo)
-        & (pd.to_datetime(operacoes["data_fim"]).dt.date >= data_alvo)
-    ]
-    if ops_do_dia.empty:
-        return True, "Disponível"
-
-    ids_ops_do_dia = ops_do_dia["id"].tolist()
-    conflito = participantes[
-        (participantes["viatura_id"] == viatura_id)
-        & (participantes["operacao_id"].isin(ids_ops_do_dia))
-    ]
-    if not conflito.empty:
-        return False, "Viatura já está escalada em outra operação nesta data."
-    return True, "Disponível"
-
-
-def viatura_disponivel_periodo(
-    viatura_id: int, data_inicio: date, data_fim: date
-) -> tuple[bool, str]:
-    """Verifica disponibilidade da viatura em todos os dias de um período."""
-    dia = data_inicio
-    while dia <= data_fim:
-        disponivel, motivo = viatura_disponivel(viatura_id, dia)
-        if not disponivel:
-            return False, f"{motivo} (dia {dia})"
-        dia += timedelta(days=1)
-    return True, "Disponível"
+# --- ABA 2: CADASTRAR NOVA VIATURA ---
+with tab_cadastrar:
+    st.subheader("Cadastro de Nova Viatura")
+    
+    # Criamos o formulário de cadastro estruturado
+    with st.form("form_cadastro_viatura", clear_on_submit=True):
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            identificacao = st.text_input("Prefixo / Identificação da Viatura", placeholder="Ex: prefixo-10, VTR-01")
+            modelo = st.text_input("Modelo do Veículo", placeholder="Ex: Toyota Hilux, Renault Duster")
+            tipo_placa = st.selectbox("Tipo de Placa Predominante", ["Caracterizada / Oficial", "Velada / Reservada", "Outros"])
+            
+        with col2:
+            placa_oficial = st.text_input("Placa Oficial", placeholder="Ex: RRY5B21")
+            placa_reservada = st.text_input("Placa Reservada (Fria / Velada)", placeholder="Ex: SPY7F80")
+            status = st.selectbox("Status de Disponibilidade", ["Ativa", "Em Manutenção", "Baixada", "Cedida"])
+            
+        btn_salvar = st.form_submit_button("Salvar Viatura")
+        
+        if btn_salvar:
+            if not identificacao or not modelo:
+                st.warning("⚠️ Os campos 'Prefixo / Identificação' e 'Modelo' são obrigatórios!")
+            else:
+                # Prepara o dicionário com os dados exatamente mapeados para o banco de dados
+                dados_viatura = {
+                    "identificacao": identificacao,
+                    "modelo": modelo,
+                    "tipo_placa": tipo_placa,
+                    "placa_oficial": placa_oficial if placa_oficial else None,
+                    "placa_reservada": placa_reservada if placa_reservada else None,
+                    "status": status
+                }
+                
+                # Executa a inserção no banco de dados do Supabase
+                sucesso = insert_data("viaturas", dados_viatura)
+                
+                if sucesso:
+                    st.success(f"✔️ Viatura {identificacao} cadastrada com sucesso!")
+                    # Recarrega a página para atualizar a tabela na outra aba
+                    st.rerun()
+                else:
+                    st.error("❌ Ocorreu um erro ao tentar salvar a viatura no banco de dados. Verifique a conexão.")
