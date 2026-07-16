@@ -102,7 +102,7 @@ with tab_gerenciar:
                             "briefing": edit_briefing
                         }
                         update_row("operacoes", id_op_selecionada, dados_atualizados)
-                        st.toast("Operação atualizada com sucesso!", icon="✔️")
+                        st.toast("Operação updated!", icon="✔️")
                         st.rerun()
                         
                 if btn_excluir_op:
@@ -115,38 +115,43 @@ with tab_gerenciar:
             # --- SEÇÃO 2: EQUIPES SEPARADAS E ESCALADAS ---
             st.markdown("### 👥 Equipes e Efetivos")
             
-            # Filtra os dados da equipe escalada nesta operação
             df_equipe_op = pd.DataFrame()
             if not df_equipes.empty:
                 df_equipe_op = df_equipes[df_equipes["operacao_id"] == id_op_selecionada].copy()
             
-            # Gera automaticamente opções de equipes de "Equipe 01" até "Equipe 20"
             equipes_existentes = [f"Equipe {i:02d}" for i in range(1, 21)]
             
-            # Mostra as equipes que possuem membros cadastrados
+            # Mostra as equipes agrupadas na tela
             if not df_equipe_op.empty:
                 for eq_nome in sorted(df_equipe_op["nome_equipe"].unique()):
                     membros_eq = df_equipe_op[df_equipe_op["nome_equipe"] == eq_nome]
                     
-                    # Tenta descobrir a viatura associada à equipe (pega do primeiro membro que tiver viatura)
+                    # Procura se há um líder configurado nesta equipe
+                    membro_lider = membros_eq[membros_eq.get("is_lider", False) == True]
+                    lider_txt = "Não definido"
+                    if not membro_lider.empty:
+                        lider_id = membro_lider.iloc[0]["servidor_id"]
+                        lider_txt = mapa_servidores.get(lider_id, "Não encontrado")
+                    
+                    # Viatura da equipe
                     vtr_id_eq = None
                     for _, row_m in membros_eq.iterrows():
                         if pd.notna(row_m.get("viatura_id")):
                             vtr_id_eq = row_m["viatura_id"]
                             break
-                    
                     vtr_txt = mapa_viaturas.get(vtr_id_eq, "Sem Viatura designada")
                     
-                    # Caixa visual para cada equipe
+                    # Container Visual da Equipe
                     with st.container(border=True):
-                        st.markdown(f"#### 🏷️ {eq_nome} — 🚗 Viatura: **{vtr_txt}**")
+                        st.markdown(f"#### 🏷️ {eq_nome} — 👑 Líder: **{lider_txt}** — 🚗 Viatura: **{vtr_txt}**")
                         
-                        # Mostra os membros
                         dados_membros_exibir = []
                         for _, row_m in membros_eq.iterrows():
+                            cargo_funcao = "👑 LÍDER DE EQUIPE" if row_m.get("is_lider", False) else "Membro"
                             dados_membros_exibir.append({
                                 "ID Registro": row_m["id"],
                                 "Policial": mapa_servidores.get(row_m["servidor_id"], "Não encontrado"),
+                                "Função na Equipe": cargo_funcao
                             })
                         
                         df_eq_grid = pd.DataFrame(dados_membros_exibir)
@@ -154,7 +159,7 @@ with tab_gerenciar:
             else:
                 st.info("Nenhum policial escalado em equipe ainda.")
             
-            # Formulário para Adicionar Policial em uma Equipe
+            # Formulário para Adicionar Policial
             st.markdown("#### ➕ Adicionar Policial à Equipe")
             with st.form("form_add_policial_equipe"):
                 col_eq1, col_eq2, col_eq3 = st.columns(3)
@@ -165,21 +170,31 @@ with tab_gerenciar:
                 with col_eq3:
                     add_viatura = st.selectbox("Defina a Viatura da Equipe", options=[None] + list(mapa_viaturas.keys()), format_func=lambda x: "Nenhuma Viatura" if x is None else mapa_viaturas[x])
                 
+                # Checkbox para marcar se ele é o líder
+                add_is_lider = st.checkbox("👑 Definir este policial como Líder da Equipe selecionada")
+                
                 btn_confirmar_membro = st.form_submit_button("➕ Vincular à Equipe")
                 
                 if btn_confirmar_membro:
+                    # Caso marque como líder, garante que nenhum outro membro cadastrado na mesma equipe seja líder simultaneamente
+                    if add_is_lider and not df_equipe_op.empty:
+                        lideres_antigos = df_equipe_op[(df_equipe_op["nome_equipe"] == add_nome_equipe) & (df_equipe_op.get("is_lider", False) == True)]
+                        for _, row_antigo in lideres_antigos.iterrows():
+                            update_row("equipes_operacoes", row_antigo["id"], {"is_lider": False})
+                    
                     dados_membro = {
                         "operacao_id": int(id_op_selecionada),
                         "servidor_id": int(add_servidor),
                         "nome_equipe": add_nome_equipe,
-                        "viatura_id": int(add_viatura) if add_viatura else None
+                        "viatura_id": int(add_viatura) if add_viatura else None,
+                        "is_lider": bool(add_is_lider)
                     }
                     resultado_link = insert_row("equipes_operacoes", dados_membro)
                     if resultado_link:
                         st.toast("Policial adicionado com sucesso!", icon="✔️")
                         st.rerun()
                     else:
-                        st.error("❌ Erro ao salvar integrante. Verifique se executou o passo SQL no Supabase.")
+                        st.error("❌ Erro ao salvar integrante. Certifique-se de executar o passo SQL anterior.")
 
             # Opção de remoção de policial
             if not df_equipe_op.empty:
@@ -209,11 +224,19 @@ with tab_gerenciar:
             objetivo_op = op_sel.get("objetivo", "Não detalhado")
             briefing_op = op_sel.get("briefing", "Não detalhado")
             
-            # Monta a estrutura de equipes para o PDF
+            # Monta equipes estruturadas para o PDF, com Líder destacado
             texto_equipes_pdf = ""
             if not df_equipe_op.empty:
                 for eq_nome in sorted(df_equipe_op["nome_equipe"].unique()):
                     membros_eq = df_equipe_op[df_equipe_op["nome_equipe"] == eq_nome]
+                    
+                    # Busca Líder da equipe
+                    lider_eq_membros = membros_eq[membros_eq.get("is_lider", False) == True]
+                    lider_pdf_txt = "Não definido"
+                    if not lider_eq_membros.empty:
+                        lider_pdf_txt = mapa_servidores.get(lider_eq_membros.iloc[0]["servidor_id"], "Não encontrado")
+                    
+                    # Busca Viatura
                     vtr_id_eq = None
                     for _, row_m in membros_eq.iterrows():
                         if pd.notna(row_m.get("viatura_id")):
@@ -221,9 +244,10 @@ with tab_gerenciar:
                             break
                     vtr_txt = mapa_viaturas.get(vtr_id_eq, "Sem Viatura")
                     
-                    texto_equipes_pdf += f"\n👉 **{eq_nome}** (Viatura: {vtr_txt})\n"
+                    texto_equipes_pdf += f"\n👉 **{eq_nome}** (👑 Líder: {lider_pdf_txt} | Viatura: {vtr_txt})\n"
                     for _, row_m in membros_eq.iterrows():
-                        texto_equipes_pdf += f"  - {mapa_servidores.get(row_m['servidor_id'], 'Policial')}\n"
+                        funcao_marcador = " [LÍDER]" if row_m.get("is_lider", False) else ""
+                        texto_equipes_pdf += f"  - {mapa_servidores.get(row_m['servidor_id'], 'Policial')}{funcao_marcador}\n"
             else:
                 texto_equipes_pdf = "Nenhuma equipe montada para esta operação."
 
