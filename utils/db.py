@@ -1,4 +1,4 @@
-"""
+ """
 Camada de acesso ao banco de dados (Supabase) para o SIGOP.
 Todas as páginas importam funções deste módulo em vez de falar
 diretamente com o Supabase - isso deixa o código mais fácil de manter.
@@ -167,6 +167,14 @@ def viatura_disponivel(viatura_id: int, data_alvo: date) -> tuple[bool, str]:
 def viatura_disponivel_periodo(
     viatura_id: int, data_inicio: date, data_fim: date
 ) -> tuple[bool, str]:
+    """Verifica disponibilidade da viatura em todos os dias de um período."""
+    dia = data_inicio
+    while dia <= data_fim:
+        disponivel, motivo = viatura_disponivel(viatura_id, dia)
+        if not disponivel:
+            return False, f"{motivo} (dia {dia})"
+        dia += timedelta(days=1)
+    return True, "Disponível"
     """Verifica disponibilidade da viatura em todos os dias de um período."""
     dia = data_inicio
     while dia <= data_fim:
