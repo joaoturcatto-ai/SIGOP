@@ -102,7 +102,7 @@ with tab_gerenciar:
                             "briefing": edit_briefing
                         }
                         update_row("operacoes", id_op_selecionada, dados_atualizados)
-                        st.toast("Operação atualizada com sucesso!", icon="✔️")
+                        st.toast("Operação updated!", icon="✔️")
                         st.rerun()
                         
                 if btn_excluir_op:
@@ -112,7 +112,7 @@ with tab_gerenciar:
 
             st.markdown("---")
 
-            # --- NOVA SEÇÃO: CONFIGURAÇÃO DE FOLGA INDIVIDUAL POR POLICIAL ---
+            # --- SEÇÃO CORRIGIDA: CONFIGURAÇÃO DE FOLGA SEM O BLOQUEIO DO FORM ---
             st.markdown("### 🌴 Configuração de Folga por Policial")
             
             df_equipe_op = pd.DataFrame()
@@ -122,7 +122,6 @@ with tab_gerenciar:
             if df_equipe_op.empty:
                 st.info("Cadastre policiais em alguma equipe abaixo antes de definir as folgas individuais.")
             else:
-                # Criar um mapeamento para o selectbox: ID da linha do vínculo -> Nome do Policial + Equipe dele
                 opcoes_policiais_folga = {
                     row["id"]: f"{mapa_servidores.get(row['servidor_id'], 'Policial')} ({row['nome_equipe']})"
                     for _, row in df_equipe_op.iterrows()
@@ -134,7 +133,6 @@ with tab_gerenciar:
                     format_func=lambda x: opcoes_policiais_folga[x]
                 )
                 
-                # Resgata os dados de folga do policial selecionado
                 policial_sel_info = df_equipe_op[df_equipe_op["id"] == id_registro_selecionado].iloc[0]
                 
                 possui_folga_atual = bool(policial_sel_info.get("possui_folga", False))
@@ -144,26 +142,24 @@ with tab_gerenciar:
                 duracao_atual = policial_sel_info.get("folga_duracao", "01 dia")
                 idx_duracao = duracoes_possiveis.index(duracao_atual) if duracao_atual in duracoes_possiveis else 2
                 
-                with st.form("form_config_folga_individual"):
-                    col_cf1, col_cf2, col_cf3 = st.columns([1.5, 2, 2.5])
-                    with col_cf1:
-                        definir_possui_folga = st.checkbox("Este policial terá direito a folga?", value=possui_folga_atual)
-                    with col_cf2:
-                        definir_folga_data = st.date_input("Data da Folga deste Policial", value=folga_data_atual, disabled=not definir_possui_folga)
-                    with col_cf3:
-                        definir_folga_duracao = st.selectbox("Duração / Período", options=duracoes_possiveis, index=idx_duracao, disabled=not definir_possui_folga)
-                    
-                    btn_salvar_folga_ind = st.form_submit_button("💾 Salvar Folga do Policial Selecionado")
-                    
-                    if btn_salvar_folga_ind:
-                        dados_folga_atualizar = {
-                            "possui_folga": bool(definir_possui_folga),
-                            "folga_data": definir_folga_data.isoformat() if definir_possui_folga else None,
-                            "folga_duracao": definir_folga_duracao if definir_possui_folga else None
-                        }
-                        update_row("equipes_operacoes", id_registro_selecionado, dados_folga_atualizar)
-                        st.toast("Folga do policial atualizada com sucesso!", icon="🌴")
-                        st.rerun()
+                # Renderizando fora de um formulário para permitir interatividade em tempo real!
+                col_cf1, col_cf2, col_cf3 = st.columns([1.5, 2, 2.5])
+                with col_cf1:
+                    definir_possui_folga = st.checkbox("Este policial terá direito a folga?", value=possui_folga_atual, key=f"chk_{id_registro_selecionado}")
+                with col_cf2:
+                    definir_folga_data = st.date_input("Data da Folga deste Policial", value=folga_data_atual, disabled=not definir_possui_folga, key=f"dt_{id_registro_selecionado}")
+                with col_cf3:
+                    definir_folga_duracao = st.selectbox("Duração / Período", options=duracoes_possiveis, index=idx_duracao, disabled=not definir_possui_folga, key=f"dur_{id_registro_selecionado}")
+                
+                if st.button("💾 Salvar Folga do Policial Selecionado", type="primary"):
+                    dados_folga_atualizar = {
+                        "possui_folga": bool(definir_possui_folga),
+                        "folga_data": definir_folga_data.isoformat() if definir_possui_folga else None,
+                        "folga_duracao": definir_folga_duracao if definir_possui_folga else None
+                    }
+                    update_row("equipes_operacoes", id_registro_selecionado, dados_folga_atualizar)
+                    st.toast("Folga do policial atualizada com sucesso!", icon="🌴")
+                    st.rerun()
 
             st.markdown("---")
             
@@ -246,7 +242,7 @@ with tab_gerenciar:
                         "nome_equipe": add_nome_equipe,
                         "viatura_id": int(add_viatura) if add_viatura else None,
                         "is_lider": bool(add_is_lider),
-                        "possui_folga": False,  # Inicializa sem folga; define individualmente no painel acima
+                        "possui_folga": False,
                         "folga_data": None,
                         "folga_duracao": None
                     }
@@ -310,7 +306,6 @@ with tab_gerenciar:
                     for _, row_m in membros_eq.iterrows():
                         funcao_marcador = " [LÍDER]" if row_m.get("is_lider", False) else ""
                         
-                        # Mostra a folga individual de cada um na listagem do PDF
                         if row_m.get("possui_folga", False):
                             folga_dt_fmtd = pd.to_datetime(row_m.get("folga_data")).strftime("%d/%m/%Y") if row_m.get("folga_data") else "N/D"
                             folga_desc = f" (Folga: {row_m.get('folga_duracao', '01 dia')} em {folga_dt_fmtd})"
