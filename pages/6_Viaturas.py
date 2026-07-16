@@ -32,11 +32,11 @@ with tab_listar:
             "modelo": "Modelo",
             "tipo_placa": "Tipo de Placa",
             "placa_oficial": "Placa Oficial",
-            "placa_reservada": "Placa Reservada (Fria)",
+            "placa_reservada": "Placa Reservada",
             "status": "Status"
         })
         
-        colunas_exibicao = ["ID", "Prefixo / Identificação", "Modelo", "Placa Oficial", "Placa Reservada (Fria)", "Tipo de Placa", "Status"]
+        colunas_exibicao = ["ID", "Prefixo / Identificação", "Modelo", "Placa Oficial", "Placa Reservada", "Tipo de Placa", "Status"]
         df_display = df_display[[c for c in colunas_exibicao if c in df_display.columns]]
         
         # Exibe a tabela
@@ -65,14 +65,14 @@ with tab_listar:
                     edit_modelo = st.text_input("Modelo", value=str(vtr_sel.get("modelo", "")))
                     
                     # Seleciona o tipo de placa correspondente
-                    tipo_atual = str(vtr_sel.get("tipo_placa", "Caracterizada / Oficial"))
-                    lista_tipos = ["Caracterizada / Oficial", "Velada / Reservada", "Outros"]
+                    tipo_atual = str(vtr_sel.get("tipo_placa", "Oficial"))
+                    lista_tipos = ["Oficial", "Reservada", "Outros"]
                     idx_tipo = lista_tipos.index(tipo_atual) if tipo_atual in lista_tipos else 0
                     edit_tipo_placa = st.selectbox("Tipo de Placa Predominante", lista_tipos, index=idx_tipo)
                 
                 with col2:
                     edit_placa_oficial = st.text_input("Placa Oficial", value=str(vtr_sel.get("placa_oficial", "") or ""))
-                    edit_placa_reservada = st.text_input("Placa Reservada (Fria)", value=str(vtr_sel.get("placa_reservada", "") or ""))
+                    edit_placa_reservada = st.text_input("Placa Reservada", value=str(vtr_sel.get("placa_reservada", "") or ""))
                     
                     # Seleciona o status correspondente
                     status_atual = str(vtr_sel.get("status", "Disponível"))
@@ -106,7 +106,7 @@ with tab_listar:
                             st.success("✔️ Viatura atualizada com sucesso!")
                             st.rerun()
                         else:
-                            st.error("❌ Não foi possível salvar as alterações no banco de dados. Verifique a conexão.")
+                            st.error("❌ Não foi possível salvar as alterações no banco de dados. Verifique o console.")
                         
                 if btn_excluir:
                     delete_row("viaturas", id_selecionado)
@@ -125,11 +125,11 @@ with tab_cadastrar:
         with col1:
             identificacao = st.text_input("Prefixo / Identificação da Viatura", placeholder="Ex: prefixo-10, VTR-01")
             modelo = st.text_input("Modelo do Veículo", placeholder="Ex: Toyota Hilux, Renault Duster")
-            tipo_placa = st.selectbox("Tipo de Placa Predominante", ["Caracterizada / Oficial", "Velada / Reservada", "Outros"])
+            tipo_placa = st.selectbox("Tipo de Placa Predominante", ["Oficial", "Reservada", "Outros"])
             
         with col2:
             placa_oficial = st.text_input("Placa Oficial", placeholder="Ex: RRY5B21")
-            placa_reservada = st.text_input("Placa Reservada (Fria / Velada)", placeholder="Ex: SPY7F80")
+            placa_reservada = st.text_input("Placa Reservada", placeholder="Ex: SPY7F80")
             status = st.selectbox("Status de Disponibilidade", ["Disponível", "Oficina", "Em operação", "Ativa", "Em Manutenção", "Baixada", "Cedida"])
             
         btn_salvar = st.form_submit_button("Salvar Viatura")
@@ -152,4 +152,4 @@ with tab_cadastrar:
                     st.success(f"✔️ Viatura {identificacao} cadastrada com sucesso!")
                     st.rerun()
                 else:
-                    st.error("❌ Erro ao salvar dados no Supabase. Certifique-se de executar os passos SQL.")
+                    st.error("❌ Erro ao salvar dados no Supabase. Verifique se removeu a restrição de tipo de placa no Supabase.")
