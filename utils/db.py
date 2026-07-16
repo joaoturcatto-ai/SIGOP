@@ -46,36 +46,52 @@ TABLE_COLUMNS = {
 
 def fetch_table(table: str, order_by: str | None = None) -> pd.DataFrame:
     """Busca todos os registros de uma tabela e retorna como DataFrame."""
-    client = get_client()
-    query = client.table(table).select("*")
-    if order_by:
-        query = query.order(order_by)
-    response = query.execute()
-    data = response.data or []
-    if not data:
+    try:
+        client = get_client()
+        query = client.table(table).select("*")
+        if order_by:
+            query = query.order(order_by)
+        response = query.execute()
+        data = response.data or []
+        if not data:
+            return pd.DataFrame(columns=TABLE_COLUMNS.get(table, []))
+        return pd.DataFrame(data)
+    except Exception as e:
+        st.error(f"Erro ao buscar dados da tabela {table}: {e}")
         return pd.DataFrame(columns=TABLE_COLUMNS.get(table, []))
-    return pd.DataFrame(data)
 
 
 def insert_row(table: str, row: dict) -> dict:
     """Insere um registro na tabela informada."""
-    client = get_client()
-    response = client.table(table).insert(row).execute()
-    return response.data
+    try:
+        client = get_client()
+        response = client.table(table).insert(row).execute()
+        return response.data
+    except Exception as e:
+        st.error(f"Erro ao inserir dados na tabela {table}: {e}")
+        return {}
 
 
 def update_row(table: str, row_id: int, changes: dict) -> dict:
     """Atualiza um registro existente pelo id."""
-    client = get_client()
-    response = client.table(table).update(changes).eq("id", row_id).execute()
-    return response.data
+    try:
+        client = get_client()
+        response = client.table(table).update(changes).eq("id", row_id).execute()
+        return response.data
+    except Exception as e:
+        st.error(f"Erro ao atualizar dados na tabela {table}: {e}")
+        return {}
 
 
 def delete_row(table: str, row_id: int) -> dict:
     """Remove um registro pelo id."""
-    client = get_client()
-    response = client.table(table).delete().eq("id", row_id).execute()
-    return response.data
+    try:
+        client = get_client()
+        response = client.table(table).delete().eq("id", row_id).execute()
+        return response.data
+    except Exception as e:
+        st.error(f"Erro ao deletar dados na tabela {table}: {e}")
+        return {}
 
 
 def servidor_disponivel(servidor_id: int, data_alvo: date) -> tuple[bool, str]:
