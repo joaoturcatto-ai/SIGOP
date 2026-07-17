@@ -62,7 +62,10 @@ with tab_gerenciar:
                     mapa_del = {row["id"]: row["nome"] for _, row in delegados.iterrows()} if not delegados.empty else {}
                     
                     del_atual_id = op_sel.get("delegado_id")
-                    idx_del = lista_del_id.index(int(del_atual_id)) if del_atual_id and int(del_atual_id) in lista_del_id else 0
+                    if pd.notna(del_atual_id) and int(del_atual_id) in lista_del_id:
+                        idx_del = lista_del_id.index(int(del_atual_id))
+                    else:
+                        idx_del = 0
                     
                     edit_delegado = st.selectbox("Delegado Responsável", options=lista_del_id, format_func=lambda x: mapa_del.get(x, "Não selecionado"), index=idx_del)
                 
