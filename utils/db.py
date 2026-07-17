@@ -18,16 +18,16 @@ def get_client() -> Client:
     return create_client(url, key)
 
 
-# Colunas esperadas de cada tabela.
+# Colunas esperadas de cada tabela. Usado para que o DataFrame retornado
+# por fetch_table() nunca fique "sem colunas" quando a tabela está vazia -
+# isso evita KeyError ao filtrar (ex: participantes["operacao_id"] == x)
+# em telas que ainda não têm nenhum registro cadastrado.
 TABLE_COLUMNS = {
     "servidores": [
         "id", "nome", "matricula", "cargo", "equipe", "telefone",
         "situacao", "observacoes", "created_at",
     ],
-    "viaturas": [
-        "id", "identificacao", "modelo", "status", "tipo_placa", 
-        "placa_oficial", "placa_reservada", "created_at"
-    ],
+    "viaturas": ["id", "identificacao", "modelo", "status", "tipo_placa", "created_at"],
     "operacoes": [
         "id", "nome", "data_inicio", "data_fim", "horario", "local", "cidade",
         "delegado_responsavel", "objetivo", "briefing", "status", "created_at",
@@ -45,57 +45,49 @@ TABLE_COLUMNS = {
 
 
 def fetch_table(table: str, order_by: str | None = None) -> pd.DataFrame:
-    """Busca todos os registros de uma tabela e retorna como DataFrame."""
-    try:
-        client = get_client()
-        query = client.table(table).select("*")
-        if order_by:
-            query = query.order(order_by)
-        response = query.execute()
-        data = response.data or []
-        if not data:
-            return pd.DataFrame(columns=TABLE_COLUMNS.get(table, []))
-        return pd.DataFrame(data)
-    except Exception as e:
-        st.error(f"Erro ao buscar dados da tabela {table}: {e}")
+    """Busca todos os registros de uma tabela e retorna como DataFrame.
+
+    Se a tabela estiver vazia, retorna um DataFrame vazio mas já com as
+    colunas corretas, para que filtros como df["coluna"] não quebrem.
+    """
+    client = get_client()
+    query = client.table(table).select("*")
+    if order_by:
+        query = query.order(order_by)
+    response = query.execute()
+    data = response.data or []
+    if not data:
         return pd.DataFrame(columns=TABLE_COLUMNS.get(table, []))
+    return pd.DataFrame(data)
 
 
 def insert_row(table: str, row: dict) -> dict:
     """Insere um registro na tabela informada."""
-    try:
-        client = get_client()
-        response = client.table(table).insert(row).execute()
-        return response.data
-    except Exception as e:
-        st.error(f"Erro ao inserir dados na tabela {table}: {e}")
-        return {}
+    client = get_client()
+    response = client.table(table).insert(row).execute()
+    return response.data
 
 
 def update_row(table: str, row_id: int, changes: dict) -> dict:
     """Atualiza um registro existente pelo id."""
-    try:
-        client = get_client()
-        response = client.table(table).update(changes).eq("id", row_id).execute()
-        return response.data
-    except Exception as e:
-        st.error(f"Erro ao atualizar dados na tabela {table}: {e}")
-        return {}
+    client = get_client()
+    response = client.table(table).update(changes).eq("id", row_id).execute()
+    return response.data
 
 
 def delete_row(table: str, row_id: int) -> dict:
     """Remove um registro pelo id."""
-    try:
-        client = get_client()
-        response = client.table(table).delete().eq("id", row_id).execute()
-        return response.data
-    except Exception as e:
-        st.error(f"Erro ao deletar dados na tabela {table}: {e}")
-        return {}
+    client = get_client()
+    response = client.table(table).delete().eq("id", row_id).execute()
+    return response.data
 
 
 def servidor_disponivel(servidor_id: int, data_alvo: date) -> tuple[bool, str]:
-    """Verifica se um servidor está disponível em uma data específica."""
+    """
+    Verifica se um servidor está disponível em uma data específica,
+    checando afastamentos, CQH e operações já agendadas.
+    Retorna (disponivel: bool, motivo: str).
+    """
     afastamentos = fetch_table("afastamentos")
     if not afastamentos.empty:
         conflito = afastamentos[
