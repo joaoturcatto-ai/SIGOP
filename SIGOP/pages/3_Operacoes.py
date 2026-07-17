@@ -1,20 +1,20 @@
 import streamlit as st
 import pandas as pd
-from datetime import date, time
+from datetime import date, time, timedelta
 from utils.db import (
     fetch_table,
     insert_row,
     update_row,
     delete_row,
-    servidor_disponivel,
-    viatura_disponivel,
+    servidor_disponivel_periodo,
+    viatura_disponivel_periodo,
 )
 
 st.set_page_config(page_title="Operações - SIGOP", page_icon="🚨", layout="wide")
 st.title("🚨 Operações")
 
 try:
-    operacoes = fetch_table("operacoes", order_by="data")
+    operacoes = fetch_table("operacoes", order_by="data_inicio")
     servidores = fetch_table("servidores", order_by="nome")
     viaturas = fetch_table("viaturas", order_by="identificacao")
     participantes = fetch_table("operacao_participantes")
@@ -22,6 +22,8 @@ except Exception as e:
     st.error("⚠️ Erro ao carregar dados.")
     st.code(str(e), language="python")
     st.stop()
+
+ICONE_PLACA = {"Oficial": "🛡️", "Reservada": "🕵️"}
 
 tab_lista, tab_nova = st.tabs(["📋 Operações cadastradas", "➕ Nova operação"])
 
@@ -33,7 +35,7 @@ with tab_lista:
         st.info("Nenhuma operação cadastrada ainda. Use a aba 'Nova operação'.")
     else:
         st.dataframe(
-            operacoes[["id", "nome", "data", "horario", "local", "status"]],
+            operacoes[["id", "nome", "data_inicio", "data_fim", "horario", "local", "status"]],
             use_container_width=True,
         )
 
@@ -46,12 +48,16 @@ with tab_lista:
 
         if operacao_id:
             dados_op = operacoes[operacoes["id"] == operacao_id].iloc[0]
+            data_inicio_op = pd.to_datetime(dados_op["data_inicio"]).date()
+            data_fim_op = pd.to_datetime(dados_op["data_fim"]).date()
+            qtd_dias_op = (data_fim_op - data_inicio_op).days + 1
 
             st.subheader(f"📌 {dados_op['nome']}")
             col1, col2, col3 = st.columns(3)
-            col1.write(f"**Data:** {dados_op['data']}")
-            col2.write(f"**Horário:** {dados_op.get('horario', '—')}")
+            col1.write(f"**Período:** {data_inicio_op} até {data_fim_op}")
+            col2.write(f"**Duração:** {qtd_dias_op} dia(s)")
             col3.write(f"**Status:** {dados_op['status']}")
+            st.write(f"**Horário:** {dados_op.get('horario', '—')}")
             st.write(f"**Local:** {dados_op.get('local', '—')} — **Cidade:** {dados_op.get('cidade', '—')}")
             st.write(f"**Delegado responsável:** {dados_op.get('delegado_responsavel', '—')}")
 
@@ -75,16 +81,22 @@ with tab_lista:
                 )
                 if not viaturas.empty:
                     exibir = exibir.merge(
-                        viaturas[["id", "identificacao"]],
+                        viaturas[["id", "identificacao", "tipo_placa"]],
                         left_on="viatura_id",
                         right_on="id",
                         how="left",
                         suffixes=("", "_vtr"),
                     )
+                    exibir["viatura"] = exibir.apply(
+                        lambda r: f"{ICONE_PLACA.get(r.get('tipo_placa'), '')} {r.get('identificacao') or '—'}".strip()
+                        if pd.notna(r.get("identificacao"))
+                        else "—",
+                        axis=1,
+                    )
                 else:
-                    exibir["identificacao"] = None
+                    exibir["viatura"] = "—"
 
-                colunas_exibir = ["nome", "cargo", "equipe", "identificacao", "folga_concedida"]
+                colunas_exibir = ["nome", "cargo", "equipe", "viatura", "folga_concedida"]
                 st.dataframe(exibir[colunas_exibir], use_container_width=True)
 
                 st.markdown("**Remover participante:**")
@@ -127,21 +139,49 @@ with tab_lista:
                             else [None],
                             format_func=lambda x: "— Nenhuma —"
                             if x is None
-                            else viaturas[viaturas["id"] == x]["identificacao"].values[0],
+                            else f"{ICONE_PLACA.get(viaturas[viaturas['id'] == x]['tipo_placa'].values[0], '')} "
+                            f"{viaturas[viaturas['id'] == x]['identificacao'].values[0]}",
                         )
-                    folga_concedida = st.selectbox(
-                        "Folga a ser concedida após a operação",
-                        ["Sem folga", "Meio período", "Dia integral"],
+
+                    st.caption(
+                        f"Esta operação dura {qtd_dias_op} dia(s): de {data_inicio_op} até {data_fim_op}. "
+                        "A disponibilidade do servidor e da viatura será checada em todos esses dias."
                     )
+
+                    st.markdown("**Folga a ser concedida após a operação**")
+                    col4, col5, col6 = st.columns(3)
+                    with col4:
+                        folga_concedida = st.selectbox(
+                            "Tipo de folga",
+                            ["Sem folga", "Meio período", "Dia integral"],
+                        )
+                    with col5:
+                        dias_folga = st.number_input(
+                            "Quantidade de dias de folga",
+                            min_value=0,
+                            max_value=30,
+                            value=0,
+                            step=1,
+                            help="Deixe 0 se a folga não deve gerar um afastamento agendado.",
+                        )
+                    with col6:
+                        data_inicio_folga = st.date_input(
+                            "Data em que a folga será usufruída",
+                            value=data_fim_op + timedelta(days=1),
+                        )
+
                     adicionar = st.form_submit_button("➕ Adicionar à equipe")
 
                     if adicionar:
-                        data_op = pd.to_datetime(dados_op["data"]).date()
-                        disponivel, motivo = servidor_disponivel(servidor_id, data_op)
+                        disponivel, motivo = servidor_disponivel_periodo(
+                            servidor_id, data_inicio_op, data_fim_op
+                        )
                         if not disponivel:
                             st.error(f"⚠️ Não é possível escalar este servidor: {motivo}")
-                        elif viatura_id is not None and not viatura_disponivel(viatura_id, data_op)[0]:
-                            st.error("⚠️ Esta viatura já está escalada em outra operação nesta data.")
+                        elif viatura_id is not None and not viatura_disponivel_periodo(
+                            viatura_id, data_inicio_op, data_fim_op
+                        )[0]:
+                            st.error("⚠️ Esta viatura já está escalada em outra operação neste período.")
                         else:
                             insert_row(
                                 "operacao_participantes",
@@ -153,19 +193,29 @@ with tab_lista:
                                     "folga_concedida": folga_concedida,
                                 },
                             )
-                            # Se folga foi concedida, registra também em afastamentos
-                            if folga_concedida != "Sem folga":
+                            if dias_folga and int(dias_folga) > 0:
+                                data_fim_folga = data_inicio_folga + timedelta(
+                                    days=int(dias_folga) - 1
+                                )
                                 insert_row(
                                     "afastamentos",
                                     {
                                         "servidor_id": servidor_id,
                                         "tipo": "Folga Operacional",
-                                        "data_inicio": str(data_op),
-                                        "data_fim": str(data_op),
-                                        "observacoes": f"Folga ({folga_concedida}) referente à operação '{dados_op['nome']}'.",
+                                        "data_inicio": str(data_inicio_folga),
+                                        "data_fim": str(data_fim_folga),
+                                        "observacoes": (
+                                            f"{int(dias_folga)} dia(s) de folga ({folga_concedida}) "
+                                            f"referente à operação '{dados_op['nome']}'."
+                                        ),
                                     },
                                 )
-                            st.success("Servidor adicionado à equipe!")
+                                st.success(
+                                    f"Servidor adicionado à equipe! Folga agendada de "
+                                    f"{data_inicio_folga} até {data_fim_folga}."
+                                )
+                            else:
+                                st.success("Servidor adicionado à equipe!")
                             st.rerun()
 
             st.markdown("---")
@@ -189,14 +239,21 @@ with tab_lista:
 with tab_nova:
     with st.form("nova_operacao", clear_on_submit=True):
         nome = st.text_input("Nome da operação* (ex: Operação Aletheia)")
+
         col1, col2, col3 = st.columns(3)
         with col1:
-            data_op = st.date_input("Data*", value=date.today())
+            data_inicio_nova = st.date_input("Data de início*", value=date.today())
         with col2:
-            horario_op = st.time_input("Horário", value=time(6, 0))
+            data_fim_nova = st.date_input("Data de fim*", value=date.today())
         with col3:
+            horario_op = st.time_input("Horário", value=time(6, 0))
+
+        col4, col5 = st.columns(2)
+        with col4:
+            local = st.text_input("Local")
+        with col5:
             cidade = st.text_input("Cidade")
-        local = st.text_input("Local")
+
         delegado_responsavel = st.text_input("Delegado responsável")
         objetivo = st.text_area(
             "Objetivo da operação",
@@ -212,12 +269,15 @@ with tab_nova:
         if enviado:
             if not nome:
                 st.error("O campo Nome da operação é obrigatório.")
+            elif data_fim_nova < data_inicio_nova:
+                st.error("A data de fim não pode ser anterior à data de início.")
             else:
                 insert_row(
                     "operacoes",
                     {
                         "nome": nome,
-                        "data": str(data_op),
+                        "data_inicio": str(data_inicio_nova),
+                        "data_fim": str(data_fim_nova),
                         "horario": str(horario_op),
                         "local": local,
                         "cidade": cidade,
@@ -227,5 +287,9 @@ with tab_nova:
                         "status": "Planejada",
                     },
                 )
-                st.success(f"Operação '{nome}' cadastrada com sucesso!")
+                dias = (data_fim_nova - data_inicio_nova).days + 1
+                st.success(
+                    f"Operação '{nome}' cadastrada com sucesso! ({dias} dia(s): "
+                    f"{data_inicio_nova} até {data_fim_nova})"
+                )
                 st.rerun()
