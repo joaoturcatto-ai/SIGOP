@@ -20,7 +20,7 @@ with tab_lista:
         st.info("Nenhuma viatura cadastrada ainda.")
     else:
         viaturas_exibir = viaturas.copy()
-        viaturas_exibir["placa"] = viaturas_exibir["tipo_placa"].map(
+        viaturas_exibir["tipo"] = viaturas_exibir["tipo_placa"].map(
             lambda t: f"{ICONE_PLACA.get(t, '')} {t}"
         )
 
@@ -43,10 +43,18 @@ with tab_lista:
             & viaturas_exibir["tipo_placa"].isin(filtro_placa)
         ]
         st.dataframe(
-            filtrado[["id", "identificacao", "modelo", "placa", "status"]],
+            filtrado[["id", "identificacao", "placa", "modelo", "tipo", "status"]],
             use_container_width=True,
         )
         st.caption("🛡️ Oficial = viatura caracterizada · 🕵️ Reservada = viatura descaracterizada")
+
+        pendentes = filtrado[filtrado["placa"].isna() | (filtrado["placa"] == "")]
+        if not pendentes.empty:
+            st.warning(
+                f"⚠️ {len(pendentes)} viatura(s) ainda sem placa cadastrada: "
+                + ", ".join(pendentes["identificacao"].tolist())
+                + ". Use 'Editar viatura' abaixo para preencher."
+            )
 
         st.markdown("---")
         st.subheader("✏️ Editar ou remover viatura")
@@ -59,16 +67,20 @@ with tab_lista:
         if selecionada:
             dados = viaturas[viaturas["id"] == selecionada].iloc[0]
             with st.form("editar_viatura"):
-                identificacao = st.text_input("Identificação", value=dados["identificacao"])
-                modelo = st.text_input("Modelo", value=dados.get("modelo", "") or "")
                 col1, col2 = st.columns(2)
                 with col1:
+                    identificacao = st.text_input("Identificação", value=dados["identificacao"])
+                with col2:
+                    placa = st.text_input("Placa*", value=dados.get("placa", "") or "")
+                modelo = st.text_input("Modelo", value=dados.get("modelo", "") or "")
+                col3, col4 = st.columns(2)
+                with col3:
                     status = st.selectbox(
                         "Status",
                         ["Disponível", "Oficina", "Em operação"],
                         index=["Disponível", "Oficina", "Em operação"].index(dados["status"]),
                     )
-                with col2:
+                with col4:
                     tipo_placa = st.selectbox(
                         "Tipo de placa",
                         ["Oficial", "Reservada"],
@@ -84,6 +96,7 @@ with tab_lista:
                         selecionada,
                         {
                             "identificacao": identificacao,
+                            "placa": placa.upper(),
                             "modelo": modelo,
                             "status": status,
                             "tipo_placa": tipo_placa,
@@ -98,12 +111,16 @@ with tab_lista:
 
 with tab_novo:
     with st.form("nova_viatura", clear_on_submit=True):
-        identificacao = st.text_input("Identificação* (ex: L200 1012)")
-        modelo = st.text_input("Modelo")
         col1, col2 = st.columns(2)
         with col1:
-            status = st.selectbox("Status", ["Disponível", "Oficina", "Em operação"])
+            identificacao = st.text_input("Identificação* (ex: L200 1012)")
         with col2:
+            placa = st.text_input("Placa* (ex: ABC-1234)")
+        modelo = st.text_input("Modelo")
+        col3, col4 = st.columns(2)
+        with col3:
+            status = st.selectbox("Status", ["Disponível", "Oficina", "Em operação"])
+        with col4:
             tipo_placa = st.selectbox(
                 "Tipo de placa",
                 ["Oficial", "Reservada"],
@@ -114,15 +131,18 @@ with tab_novo:
         if enviado:
             if not identificacao:
                 st.error("O campo Identificação é obrigatório.")
+            elif not placa:
+                st.error("O campo Placa é obrigatório.")
             else:
                 insert_row(
                     "viaturas",
                     {
                         "identificacao": identificacao,
+                        "placa": placa.upper(),
                         "modelo": modelo,
                         "status": status,
                         "tipo_placa": tipo_placa,
                     },
                 )
-                st.success(f"Viatura '{identificacao}' cadastrada!")
+                st.success(f"Viatura '{identificacao}' (placa {placa.upper()}) cadastrada!")
                 st.rerun()
