@@ -27,14 +27,19 @@ TABLE_COLUMNS = {
         "id", "nome", "matricula", "cargo", "equipe", "telefone",
         "situacao", "observacoes", "created_at",
     ],
-    "viaturas": ["id", "identificacao", "placa", "modelo", "status", "tipo_placa", "created_at"],
+    "viaturas": ["id", "identificacao", "modelo", "status", "placa_oficial", "placa_reservada", "created_at"],
     "operacoes": [
         "id", "nome", "data_inicio", "data_fim", "horario", "local", "cidade",
-        "delegado_responsavel", "objetivo", "briefing", "status", "created_at",
+        "delegado_id", "delegado_responsavel", "objetivo", "briefing", "status", "created_at",
     ],
     "operacao_participantes": [
         "id", "operacao_id", "servidor_id", "equipe", "viatura_id",
         "folga_concedida", "created_at",
+    ],
+    "equipes_operacoes": [
+        "id", "operacao_id", "servidor_id", "nome_equipe", "viatura_id",
+        "is_lider", "possui_folga", "folga_data", "folga_duracao",
+        "referencia_operacao", "created_at",
     ],
     "cqh": ["id", "data", "servidor_id", "equipe", "created_at"],
     "afastamentos": [
