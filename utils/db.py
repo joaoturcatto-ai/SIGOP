@@ -27,7 +27,7 @@ TABLE_COLUMNS = {
         "id", "nome", "matricula", "cargo", "equipe", "telefone",
         "situacao", "observacoes", "created_at",
     ],
-    "viaturas": ["id", "identificacao", "modelo", "status", "tipo_placa", "created_at"],
+    "viaturas": ["id", "identificacao", "placa", "modelo", "status", "tipo_placa", "created_at"],
     "operacoes": [
         "id", "nome", "data_inicio", "data_fim", "horario", "local", "cidade",
         "delegado_responsavel", "objetivo", "briefing", "status", "created_at",
