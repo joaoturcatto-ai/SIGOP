@@ -14,6 +14,36 @@ st.set_page_config(page_title="Operações - SIGOP", layout="wide")
 
 st.title("🎯 Gestão de Operações")
 
+
+def formatar_datas_folga(raw):
+    """Converte a string de datas separadas por vírgula em uma lista de datas
+    formatadas (dd/mm/aaaa), ignorando qualquer valor inválido (nan, vazio, etc.)
+    em vez de quebrar o app."""
+    if not raw:
+        return []
+    datas_fmt = []
+    for d in str(raw).split(","):
+        d = d.strip()
+        if not d or d.lower() in ("nan", "none", "nat"):
+            continue
+        dt = pd.to_datetime(d, errors="coerce")
+        if pd.notna(dt):
+            datas_fmt.append(dt.strftime("%d/%m/%Y"))
+    return datas_fmt
+
+
+def placa_disponivel(row):
+    """Retorna a primeira placa válida (oficial ou reservada) sem nunca
+    devolver o texto 'nan' quando o campo está vazio."""
+    p_of = row.get("placa_oficial")
+    if pd.notna(p_of) and str(p_of).strip():
+        return str(p_of)
+    p_res = row.get("placa_reservada")
+    if pd.notna(p_res) and str(p_res).strip():
+        return str(p_res)
+    return "Sem Placa"
+
+
 # Carrega os dados necessários do banco
 df_operacoes = fetch_table("operacoes")
 df_servidores = fetch_table("servidores")
@@ -22,7 +52,7 @@ df_equipes = fetch_table("equipes_operacoes")
 
 # Mapeamentos de apoio
 mapa_servidores = {row["id"]: f"{row['nome']} ({row['cargo']})" for _, row in df_servidores.iterrows()} if not df_servidores.empty else {}
-mapa_viaturas = {row["id"]: f"{row['identificacao']} — {row.get('placa_oficial') or row.get('placa_reservada') or 'Sem Placa'}" for _, row in df_viaturas.iterrows()} if not df_viaturas.empty else {}
+mapa_viaturas = {row["id"]: f"{row['identificacao']} — {placa_disponivel(row)}" for _, row in df_viaturas.iterrows()} if not df_viaturas.empty else {}
 
 # Abas principais
 tab_gerenciar, tab_cadastrar = st.tabs(["⚙️ Gerenciar e Editar Operação", "➕ Cadastrar Nova Operação"])
@@ -152,8 +182,10 @@ with tab_gerenciar:
                 datas_salvas_str = policial_sel_info.get("folga_data", "")
                 datas_padrao_list = []
                 if datas_salvas_str:
-                    # Pode ser salvo como uma única string ou datas separadas por vírgula
-                    datas_padrao_list = [d.strip() for d in str(datas_salvas_str).split(",") if d.strip()]
+                    datas_padrao_list = [
+                        d.strip() for d in str(datas_salvas_str).split(",")
+                        if d.strip() and d.strip().lower() not in ("nan", "none", "nat")
+                    ]
 
                 # Gera as datas possíveis com base no período da operação (ou dos próximos 30 dias se o período for inválido)
                 hoje = date.today()
@@ -189,12 +221,11 @@ with tab_gerenciar:
                     definir_folga_duracao = st.selectbox("Período da folga", options=duracoes_possiveis, index=idx_duracao, disabled=not definir_possui_folga, key=f"dur_{id_registro_selecionado}")
 
                 if st.button("💾 Salvar Folga do Policial Selecionado", type="primary"):
-                    # Salvamos as datas unidas por vírgula no banco, além de guardar explicitamente a referência da operação!
                     dados_folga_atualizar = {
                         "possui_folga": bool(definir_possui_folga),
                         "folga_data": ",".join(definir_folgas_selecionadas) if definir_possui_folga and definir_folgas_selecionadas else None,
                         "folga_duracao": definir_folga_duracao if definir_possui_folga else None,
-                        "referencia_operacao": nome_operacao_atual if definir_possui_folga else None # Campo chave para os afastamentos!
+                        "referencia_operacao": nome_operacao_atual if definir_possui_folga else None
                     }
                     update_row("equipes_operacoes", id_registro_selecionado, dados_folga_atualizar)
 
@@ -263,11 +294,12 @@ with tab_gerenciar:
                         for _, row_m in membros_eq.iterrows():
                             cargo_funcao = "👑 LÍDER DE EQUIPE" if row_m.get("is_lider", False) else "Membro"
 
-                            # Formatação das múltiplas datas alternadas na tabela
                             if row_m.get("possui_folga", False) and row_m.get("folga_data"):
-                                datas_lista = str(row_m["folga_data"]).split(",")
-                                datas_fmtd = [pd.to_datetime(d.strip()).strftime("%d/%m/%Y") for d in datas_lista if d.strip()]
-                                status_folga = f"📅 {row_m.get('folga_duracao', 'Integral')} em: {', '.join(datas_fmtd)}"
+                                datas_fmtd = formatar_datas_folga(row_m["folga_data"])
+                                if datas_fmtd:
+                                    status_folga = f"📅 {row_m.get('folga_duracao', 'Integral')} em: {', '.join(datas_fmtd)}"
+                                else:
+                                    status_folga = "❌ Sem folga registrada"
                             else:
                                 status_folga = "❌ Sem folga registrada"
 
@@ -303,7 +335,6 @@ with tab_gerenciar:
                 btn_confirmar_membro = st.form_submit_button("➕ Vincular à Equipe")
 
                 if btn_confirmar_membro:
-                    # --- Checagem de disponibilidade (mesma proteção usada no resto do sistema) ---
                     disponivel, motivo = servidor_disponivel_periodo(
                         int(add_servidor), data_ini_padrao, data_fim_padrao
                     )
@@ -351,8 +382,6 @@ with tab_gerenciar:
                     }
                     membro_remover_id = st.selectbox("Selecione o integrante para remover:", options=list(opcoes_remover.keys()), format_func=lambda x: opcoes_remover[x])
                     if st.button("❌ Confirmar Remoção da Equipe"):
-                        # Remove também qualquer folga vinculada a este vínculo, para não deixar
-                        # um afastamento "órfão" bloqueando o servidor sem motivo aparente.
                         tag_referencia = f"[ref:eq{membro_remover_id}]"
                         afastamentos_existentes = fetch_table("afastamentos")
                         if not afastamentos_existentes.empty:
@@ -408,9 +437,11 @@ with tab_gerenciar:
                         funcao_marcador = " [LÍDER]" if row_m.get("is_lider", False) else ""
 
                         if row_m.get("possui_folga", False) and row_m.get("folga_data"):
-                            datas_l = str(row_m["folga_data"]).split(",")
-                            datas_fmtd_l = [pd.to_datetime(d.strip()).strftime("%d/%m/%Y") for d in datas_l if d.strip()]
-                            folga_desc = f" (Folga {row_m.get('folga_duracao', 'Integral')} em: {', '.join(datas_fmtd_l)})"
+                            datas_fmtd_l = formatar_datas_folga(row_m["folga_data"])
+                            if datas_fmtd_l:
+                                folga_desc = f" (Folga {row_m.get('folga_duracao', 'Integral')} em: {', '.join(datas_fmtd_l)})"
+                            else:
+                                folga_desc = " (Sem Folga)"
                         else:
                             folga_desc = " (Sem Folga)"
 
