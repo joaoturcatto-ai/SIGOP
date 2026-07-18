@@ -18,6 +18,10 @@ def get_client() -> Client:
     return create_client(url, key)
 
 
+# Colunas esperadas de cada tabela. Usado para que o DataFrame retornado
+# por fetch_table() nunca fique "sem colunas" quando a tabela está vazia -
+# isso evita KeyError ao filtrar (ex: participantes["operacao_id"] == x)
+# em telas que ainda não têm nenhum registro cadastrado.
 TABLE_COLUMNS = {
     "servidores": [
         "id", "nome", "matricula", "cargo", "equipe", "telefone",
@@ -46,7 +50,11 @@ TABLE_COLUMNS = {
 
 
 def fetch_table(table: str, order_by: str | None = None) -> pd.DataFrame:
-    """Busca todos os registros de uma tabela e retorna como DataFrame."""
+    """Busca todos os registros de uma tabela e retorna como DataFrame.
+
+    Se a tabela estiver vazia, retorna um DataFrame vazio mas já com as
+    colunas corretas, para que filtros como df["coluna"] não quebrem.
+    """
     client = get_client()
     query = client.table(table).select("*")
     if order_by:
@@ -172,3 +180,8 @@ def viatura_disponivel_periodo(
             return False, f"{motivo} (dia {dia})"
         dia += timedelta(days=1)
     return True, "Disponível"
+
+
+# Cliente global, mantido por compatibilidade com páginas que fazem
+# "from utils.db import client" em vez de chamar get_client() diretamente.
+client = get_client()
