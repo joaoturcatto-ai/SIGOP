@@ -114,7 +114,7 @@ def servidor_disponivel(servidor_id: int, data_alvo: date) -> tuple[bool, str]:
             return False, "Servidor já está escalado no CQH nesta data."
 
     operacoes = fetch_table("operacoes")
-    participantes = fetch_table("operacao_participantes")
+    participantes = fetch_table("equipes_operacoes")
     if not operacoes.empty and not participantes.empty:
         ops_do_dia = operacoes[
             (pd.to_datetime(operacoes["data_inicio"]).dt.date <= data_alvo)
@@ -148,7 +148,7 @@ def servidor_disponivel_periodo(
 def viatura_disponivel(viatura_id: int, data_alvo: date) -> tuple[bool, str]:
     """Verifica se uma viatura já está alocada em outra operação na mesma data."""
     operacoes = fetch_table("operacoes")
-    participantes = fetch_table("operacao_participantes")
+    participantes = fetch_table("equipes_operacoes")
     if operacoes.empty or participantes.empty:
         return True, "Disponível"
 
