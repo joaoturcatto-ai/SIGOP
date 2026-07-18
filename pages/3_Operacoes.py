@@ -104,7 +104,7 @@ with tab_gerenciar:
                             "nome": edit_nome,
                             "local": edit_local,
                             "cidade": edit_cidade,
-                            "delegado_id": edit_delegado if edit_delegado else None,
+                            "delegado_id": int(edit_delegado) if edit_delegado else None,
                             "data_inicio": edit_data_ini.isoformat(),
                             "data_fim": edit_data_fim.isoformat(),
                             "horario": edit_horario.strftime("%H:%M:%S"),
