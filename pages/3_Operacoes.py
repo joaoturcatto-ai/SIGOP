@@ -629,6 +629,15 @@ with tab_cadastrar:
         "Cidade cadastrada", options=opcoes_cidade_novo, key="sel_cidade_novo"
     )
 
+    st.markdown("---")
+    st.markdown("### 👥 Montar equipes já nesta etapa (opcional)")
+    qtd_equipes_novo = st.number_input(
+        "Quantas equipes você quer montar agora?",
+        min_value=0, max_value=20, value=0, step=1,
+        key="qtd_equipes_novo",
+        help="Deixe 0 se preferir montar as equipes depois, na aba 'Gerenciar e Editar Operação'.",
+    )
+
     with st.form("form_nova_operacao", clear_on_submit=True):
         col_c1, col_c2 = st.columns(2)
 
@@ -657,6 +666,41 @@ with tab_cadastrar:
         cad_objetivo = st.text_area("Objetivo da Operação")
         cad_briefing = st.text_area("Briefing / Instruções")
 
+        equipes_form_data = []
+        if qtd_equipes_novo > 0:
+            st.markdown("---")
+            st.markdown("#### 👥 Equipes desta operação")
+            for i in range(1, int(qtd_equipes_novo) + 1):
+                st.markdown(f"**Equipe {i:02d}**")
+                col_e1, col_e2, col_e3 = st.columns(3)
+                with col_e1:
+                    membros_eq_i = st.multiselect(
+                        f"Policiais da Equipe {i:02d}",
+                        options=list(mapa_servidores.keys()),
+                        format_func=lambda x: mapa_servidores[x],
+                        key=f"membros_eq_{i}",
+                    )
+                with col_e2:
+                    lider_eq_i = st.selectbox(
+                        f"Líder da Equipe {i:02d}",
+                        options=[None] + list(mapa_servidores.keys()),
+                        format_func=lambda x: "— Nenhum —" if x is None else mapa_servidores[x],
+                        key=f"lider_eq_{i}",
+                    )
+                with col_e3:
+                    viatura_eq_i = st.selectbox(
+                        f"Viatura da Equipe {i:02d}",
+                        options=[None] + list(mapa_viaturas.keys()),
+                        format_func=lambda x: "— Nenhuma —" if x is None else mapa_viaturas[x],
+                        key=f"viatura_eq_{i}",
+                    )
+                equipes_form_data.append({
+                    "nome_equipe": f"Equipe {i:02d}",
+                    "membros": membros_eq_i,
+                    "lider": lider_eq_i,
+                    "viatura": viatura_eq_i,
+                })
+
         btn_cadastrar_op = st.form_submit_button("💾 Criar Operação")
 
         if btn_cadastrar_op:
@@ -679,7 +723,68 @@ with tab_cadastrar:
                 }
                 res = insert_row("operacoes", dados_nova_op)
                 if res:
-                    st.success(f"✔️ Operação '{cad_nome}' cadastrada com sucesso!")
+                    nova_operacao_id = res[0]["id"]
+
+                    avisos_conflito = []
+                    total_inseridos = 0
+
+                    for equipe_info in equipes_form_data:
+                        membros_finais = set(equipe_info["membros"])
+                        if equipe_info["lider"] is not None:
+                            membros_finais.add(equipe_info["lider"])
+
+                        for servidor_id_membro in membros_finais:
+                            if cad_data_ini and cad_data_fim:
+                                disponivel, motivo = servidor_disponivel_periodo(
+                                    int(servidor_id_membro), cad_data_ini, cad_data_fim
+                                )
+                            else:
+                                disponivel, motivo = True, ""
+
+                            viatura_ok, motivo_viatura = True, ""
+                            if equipe_info["viatura"] is not None and cad_data_ini and cad_data_fim:
+                                viatura_ok, motivo_viatura = viatura_disponivel_periodo(
+                                    int(equipe_info["viatura"]), cad_data_ini, cad_data_fim
+                                )
+
+                            if not disponivel:
+                                avisos_conflito.append(
+                                    f"{mapa_servidores.get(servidor_id_membro, servidor_id_membro)} "
+                                    f"({equipe_info['nome_equipe']}): {motivo}"
+                                )
+                                continue
+                            if not viatura_ok:
+                                avisos_conflito.append(
+                                    f"{mapa_servidores.get(servidor_id_membro, servidor_id_membro)} "
+                                    f"({equipe_info['nome_equipe']}) — viatura indisponível: {motivo_viatura}"
+                                )
+                                continue
+
+                            insert_row(
+                                "equipes_operacoes",
+                                {
+                                    "operacao_id": int(nova_operacao_id),
+                                    "servidor_id": int(servidor_id_membro),
+                                    "nome_equipe": equipe_info["nome_equipe"],
+                                    "viatura_id": int(equipe_info["viatura"]) if equipe_info["viatura"] else None,
+                                    "is_lider": servidor_id_membro == equipe_info["lider"],
+                                    "possui_folga": False,
+                                    "folga_data": None,
+                                    "folga_duracao": None,
+                                    "referencia_operacao": None,
+                                },
+                            )
+                            total_inseridos += 1
+
+                    st.success(
+                        f"✔️ Operação '{cad_nome}' cadastrada com sucesso! "
+                        f"{total_inseridos} policial(is) escalado(s) nas equipes."
+                    )
+                    if avisos_conflito:
+                        st.warning(
+                            "⚠️ Alguns policiais não puderam ser escalados por conflito de agenda:\n\n"
+                            + "\n".join(f"- {a}" for a in avisos_conflito)
+                        )
                     st.rerun()
                 else:
                     st.error("❌ Erro ao salvar operação.")
