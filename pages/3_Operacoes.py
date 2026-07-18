@@ -599,6 +599,16 @@ with tab_gerenciar:
 with tab_cadastrar:
     st.subheader("Cadastrar Nova Operação")
 
+    if "msg_operacao_criada" in st.session_state:
+        msg = st.session_state.pop("msg_operacao_criada")
+        st.success(msg["sucesso"])
+        if msg.get("conflitos"):
+            st.warning(
+                "⚠️ Estes policiais NÃO foram escalados por conflito de agenda "
+                "(já estavam ocupados nesta data em outro compromisso):\n\n"
+                + "\n".join(f"- {a}" for a in msg["conflitos"])
+            )
+
     delegados_novo = df_servidores[df_servidores["cargo"].str.contains("Delegado", case=False, na=False)] if not df_servidores.empty else pd.DataFrame()
     mapa_del_novo = {row["id"]: row["nome"] for _, row in delegados_novo.iterrows()} if not delegados_novo.empty else {}
 
@@ -776,15 +786,13 @@ with tab_cadastrar:
                             )
                             total_inseridos += 1
 
-                    st.success(
-                        f"✔️ Operação '{cad_nome}' cadastrada com sucesso! "
-                        f"{total_inseridos} policial(is) escalado(s) nas equipes."
-                    )
-                    if avisos_conflito:
-                        st.warning(
-                            "⚠️ Alguns policiais não puderam ser escalados por conflito de agenda:\n\n"
-                            + "\n".join(f"- {a}" for a in avisos_conflito)
-                        )
+                    st.session_state["msg_operacao_criada"] = {
+                        "sucesso": (
+                            f"Operação '{cad_nome}' cadastrada com sucesso! "
+                            f"{total_inseridos} policial(is) escalado(s) nas equipes."
+                        ),
+                        "conflitos": avisos_conflito,
+                    }
                     st.rerun()
                 else:
                     st.error("❌ Erro ao salvar operação.")
