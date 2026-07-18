@@ -44,6 +44,23 @@ def placa_disponivel(row):
     return "Sem Placa"
 
 
+def filtrar_por_busca(mapa: dict, termo: str) -> dict:
+    """Filtra um dicionário {id: rótulo} por um termo de busca.
+    Aceita tanto substring do nome quanto as iniciais das palavras
+    (ex: 'MDS' encontra 'MARCELO DE SOUZA')."""
+    if not termo:
+        return mapa
+    termo_up = termo.strip().upper()
+    resultado = {}
+    for chave, rotulo in mapa.items():
+        rotulo_up = str(rotulo).upper()
+        nome_parte = rotulo_up.split(" (")[0]
+        iniciais = "".join(p[0] for p in nome_parte.split() if p)
+        if termo_up in rotulo_up or termo_up in iniciais:
+            resultado[chave] = rotulo
+    return resultado
+
+
 # Carrega os dados necessários do banco
 df_operacoes = fetch_table("operacoes")
 df_servidores = fetch_table("servidores")
@@ -74,8 +91,10 @@ with tab_gerenciar:
             # --- SEÇÃO 1: FORMULÁRIO DE EDIÇÃO GERAL ---
             st.markdown("### 📝 Editar Dados Gerais da Operação")
 
-            data_ini_padrao = pd.to_datetime(op_sel.get("data_inicio", date.today())).date()
-            data_fim_padrao = pd.to_datetime(op_sel.get("data_fim", date.today())).date()
+            data_inicio_raw = op_sel.get("data_inicio")
+            data_fim_raw = op_sel.get("data_fim")
+            data_ini_padrao = pd.to_datetime(data_inicio_raw).date() if pd.notna(data_inicio_raw) else None
+            data_fim_padrao = pd.to_datetime(data_fim_raw).date() if pd.notna(data_fim_raw) else None
 
             hora_raw = op_sel.get("horario", "08:00:00")
             try:
@@ -86,29 +105,63 @@ with tab_gerenciar:
                 except Exception:
                     hora_padrao = time(8, 0)
 
+            delegados = df_servidores[df_servidores["cargo"].str.contains("Delegado", case=False, na=False)] if not df_servidores.empty else pd.DataFrame()
+            mapa_del = {row["id"]: row["nome"] for _, row in delegados.iterrows()} if not delegados.empty else {}
+
+            busca_del_edit = st.text_input(
+                "🔎 Buscar delegado por nome ou iniciais (ex: 'BMP')", key="busca_del_edit"
+            )
+            mapa_del_edit_filtrado = filtrar_por_busca(mapa_del, busca_del_edit)
+            if busca_del_edit and not mapa_del_edit_filtrado:
+                st.warning("Nenhum delegado encontrado com esse termo.")
+            opcoes_del_edit = mapa_del_edit_filtrado if mapa_del_edit_filtrado else mapa_del
+            lista_del_id = list(opcoes_del_edit.keys())
+
+            del_atual_id = op_sel.get("delegado_id")
+            if pd.notna(del_atual_id) and int(del_atual_id) in lista_del_id:
+                idx_del = lista_del_id.index(int(del_atual_id))
+            else:
+                idx_del = 0
+
+            cidades_existentes = (
+                sorted(df_operacoes["cidade"].dropna().unique().tolist())
+                if not df_operacoes.empty and "cidade" in df_operacoes.columns
+                else []
+            )
+            cidade_atual = str(op_sel.get("cidade", "") or "")
+            busca_cidade_edit = st.text_input(
+                "🔎 Buscar cidade já usada (ou deixe em branco para digitar uma nova abaixo)",
+                key="busca_cidade_edit",
+            )
+            cidades_filtradas_edit = filtrar_por_busca(
+                {c: c for c in cidades_existentes}, busca_cidade_edit
+            )
+            opcoes_cidade_edit = ["— Digitar nova cidade —"] + (
+                list(cidades_filtradas_edit.values()) if busca_cidade_edit else cidades_existentes
+            )
+            idx_cidade_edit = (
+                opcoes_cidade_edit.index(cidade_atual) if cidade_atual in opcoes_cidade_edit else 0
+            )
+            cidade_selecionada_edit = st.selectbox(
+                "Cidade cadastrada", options=opcoes_cidade_edit, index=idx_cidade_edit, key="sel_cidade_edit"
+            )
+
             with st.form("form_editar_operacao_dados"):
                 col1, col2 = st.columns(2)
 
                 with col1:
                     edit_nome = st.text_input("Nome da Operação", value=str(op_sel.get("nome", "")))
                     edit_local = st.text_input("Local / Ponto de Encontro", value=str(op_sel.get("local", "")))
-                    edit_cidade = st.text_input("Cidade", value=str(op_sel.get("cidade", "")))
-
-                    delegados = df_servidores[df_servidores["cargo"].str.contains("Delegado", case=False, na=False)] if not df_servidores.empty else pd.DataFrame()
-                    lista_del_id = list(delegados["id"].unique()) if not delegados.empty else []
-                    mapa_del = {row["id"]: row["nome"] for _, row in delegados.iterrows()} if not delegados.empty else {}
-
-                    del_atual_id = op_sel.get("delegado_id")
-                    if pd.notna(del_atual_id) and int(del_atual_id) in lista_del_id:
-                        idx_del = lista_del_id.index(int(del_atual_id))
+                    if cidade_selecionada_edit == "— Digitar nova cidade —":
+                        edit_cidade = st.text_input("Digite a nova cidade", value=cidade_atual)
                     else:
-                        idx_del = 0
+                        edit_cidade = cidade_selecionada_edit
 
-                    edit_delegado = st.selectbox("Delegado Responsável", options=lista_del_id, format_func=lambda x: mapa_del.get(x, "Não selecionado"), index=idx_del)
+                    edit_delegado = st.selectbox("Delegado Responsável", options=lista_del_id, format_func=lambda x: opcoes_del_edit.get(x, "Não selecionado"), index=idx_del)
 
                 with col2:
-                    edit_data_ini = st.date_input("Data de Início", value=data_ini_padrao)
-                    edit_data_fim = st.date_input("Data de Fim", value=data_fim_padrao)
+                    edit_data_ini = st.date_input("Data de Início (opcional)", value=data_ini_padrao)
+                    edit_data_fim = st.date_input("Data de Fim (opcional)", value=data_fim_padrao)
                     edit_horario = st.time_input("Horário", value=hora_padrao)
 
                     status_atual = str(op_sel.get("status", "Planejada"))
@@ -135,8 +188,8 @@ with tab_gerenciar:
                             "local": edit_local,
                             "cidade": edit_cidade,
                             "delegado_id": int(edit_delegado) if edit_delegado else None,
-                            "data_inicio": edit_data_ini.isoformat(),
-                            "data_fim": edit_data_fim.isoformat(),
+                            "data_inicio": edit_data_ini.isoformat() if edit_data_ini else None,
+                            "data_fim": edit_data_fim.isoformat() if edit_data_fim else None,
                             "horario": edit_horario.strftime("%H:%M:%S"),
                             "status": edit_status,
                             "objetivo": edit_objetivo,
@@ -189,8 +242,8 @@ with tab_gerenciar:
 
                 # Gera as datas possíveis com base no período da operação (ou dos próximos 30 dias se o período for inválido)
                 hoje = date.today()
-                op_start = pd.to_datetime(op_sel.get("data_inicio", hoje)).date()
-                op_end = pd.to_datetime(op_sel.get("data_fim", hoje + timedelta(days=5))).date()
+                op_start = data_ini_padrao if data_ini_padrao else hoje
+                op_end = data_fim_padrao if data_fim_padrao else hoje + timedelta(days=15)
 
                 # Cria a lista de opções de datas para o usuário clicar
                 datas_disponiveis = []
@@ -317,14 +370,34 @@ with tab_gerenciar:
 
             # Formulário para Adicionar Policial à Equipe
             st.markdown("#### ➕ Adicionar Policial à Equipe")
-            st.caption(
-                f"Período desta operação: {data_ini_padrao} até {data_fim_padrao}. "
-                "A disponibilidade do policial e da viatura será checada nesse período inteiro."
+            if data_ini_padrao and data_fim_padrao:
+                st.caption(
+                    f"Período desta operação: {data_ini_padrao} até {data_fim_padrao}. "
+                    "A disponibilidade do policial e da viatura será checada nesse período inteiro."
+                )
+            else:
+                st.caption(
+                    "⚠️ Esta operação não tem datas definidas — a checagem automática de "
+                    "disponibilidade (conflitos de escala) não será aplicada."
+                )
+
+            busca_add_policial = st.text_input(
+                "🔎 Buscar policial por nome ou iniciais (ex: 'MDS' para Marcelo De Souza)",
+                key="busca_add_policial",
             )
+            mapa_servidores_busca = filtrar_por_busca(mapa_servidores, busca_add_policial)
+            if busca_add_policial and not mapa_servidores_busca:
+                st.warning("Nenhum policial encontrado com esse termo de busca.")
+            opcoes_policial_form = mapa_servidores_busca if mapa_servidores_busca else mapa_servidores
+
             with st.form("form_add_policial_equipe"):
                 col_eq1, col_eq2, col_eq3 = st.columns(3)
                 with col_eq1:
-                    add_servidor = st.selectbox("Selecione o Policial", options=list(mapa_servidores.keys()), format_func=lambda x: mapa_servidores[x])
+                    add_servidor = st.selectbox(
+                        "Selecione o Policial",
+                        options=list(opcoes_policial_form.keys()),
+                        format_func=lambda x: opcoes_policial_form.get(x, mapa_servidores.get(x, "")),
+                    )
                 with col_eq2:
                     add_nome_equipe = st.selectbox("Escolha a Equipe", options=equipes_existentes)
                 with col_eq3:
@@ -335,15 +408,19 @@ with tab_gerenciar:
                 btn_confirmar_membro = st.form_submit_button("➕ Vincular à Equipe")
 
                 if btn_confirmar_membro:
-                    disponivel, motivo = servidor_disponivel_periodo(
-                        int(add_servidor), data_ini_padrao, data_fim_padrao
-                    )
-                    viatura_ok = True
-                    motivo_viatura = ""
-                    if add_viatura is not None:
-                        viatura_ok, motivo_viatura = viatura_disponivel_periodo(
-                            int(add_viatura), data_ini_padrao, data_fim_padrao
+                    if data_ini_padrao and data_fim_padrao:
+                        disponivel, motivo = servidor_disponivel_periodo(
+                            int(add_servidor), data_ini_padrao, data_fim_padrao
                         )
+                        viatura_ok = True
+                        motivo_viatura = ""
+                        if add_viatura is not None:
+                            viatura_ok, motivo_viatura = viatura_disponivel_periodo(
+                                int(add_viatura), data_ini_padrao, data_fim_padrao
+                            )
+                    else:
+                        disponivel, motivo = True, ""
+                        viatura_ok, motivo_viatura = True, ""
 
                     if not disponivel:
                         st.error(f"⚠️ Não é possível escalar este policial: {motivo}")
@@ -522,23 +599,57 @@ with tab_gerenciar:
 with tab_cadastrar:
     st.subheader("Cadastrar Nova Operação")
 
+    delegados_novo = df_servidores[df_servidores["cargo"].str.contains("Delegado", case=False, na=False)] if not df_servidores.empty else pd.DataFrame()
+    mapa_del_novo = {row["id"]: row["nome"] for _, row in delegados_novo.iterrows()} if not delegados_novo.empty else {}
+
+    busca_del_novo = st.text_input(
+        "🔎 Buscar delegado por nome ou iniciais", key="busca_del_novo"
+    )
+    mapa_del_novo_filtrado = filtrar_por_busca(mapa_del_novo, busca_del_novo)
+    if busca_del_novo and not mapa_del_novo_filtrado:
+        st.warning("Nenhum delegado encontrado com esse termo.")
+    opcoes_del_novo = mapa_del_novo_filtrado if mapa_del_novo_filtrado else mapa_del_novo
+
+    cidades_existentes_novo = (
+        sorted(df_operacoes["cidade"].dropna().unique().tolist())
+        if not df_operacoes.empty and "cidade" in df_operacoes.columns
+        else []
+    )
+    busca_cidade_novo = st.text_input(
+        "🔎 Buscar cidade já usada (ou deixe em branco para digitar uma nova abaixo)",
+        key="busca_cidade_novo",
+    )
+    cidades_filtradas_novo = filtrar_por_busca(
+        {c: c for c in cidades_existentes_novo}, busca_cidade_novo
+    )
+    opcoes_cidade_novo = ["— Digitar nova cidade —"] + (
+        list(cidades_filtradas_novo.values()) if busca_cidade_novo else cidades_existentes_novo
+    )
+    cidade_selecionada_novo = st.selectbox(
+        "Cidade cadastrada", options=opcoes_cidade_novo, key="sel_cidade_novo"
+    )
+
     with st.form("form_nova_operacao", clear_on_submit=True):
         col_c1, col_c2 = st.columns(2)
 
         with col_c1:
             cad_nome = st.text_input("Nome da Operação", placeholder="Ex: Operação Devastate")
             cad_local = st.text_input("Ponto de Encontro / Local", placeholder="Ex: Sede da Diretoria")
-            cad_cidade = st.text_input("Cidade", placeholder="Ex: Cuiabá")
+            if cidade_selecionada_novo == "— Digitar nova cidade —":
+                cad_cidade = st.text_input("Digite a nova cidade", placeholder="Ex: Cuiabá")
+            else:
+                cad_cidade = cidade_selecionada_novo
+                st.text_input("Cidade selecionada", value=cad_cidade, disabled=True)
 
-            delegados = df_servidores[df_servidores["cargo"].str.contains("Delegado", case=False, na=False)] if not df_servidores.empty else pd.DataFrame()
-            lista_del_id = list(delegados["id"].unique()) if not delegados.empty else []
-            mapa_del = {row["id"]: row["nome"] for _, row in delegados.iterrows()} if not delegados.empty else {}
-
-            cad_delegado = st.selectbox("Delegado Responsável", options=lista_del_id, format_func=lambda x: mapa_del.get(x, "Nenhum"))
+            cad_delegado = st.selectbox(
+                "Delegado Responsável",
+                options=list(opcoes_del_novo.keys()),
+                format_func=lambda x: opcoes_del_novo.get(x, mapa_del_novo.get(x, "Nenhum")),
+            )
 
         with col_c2:
-            cad_data_ini = st.date_input("Data de Início", value=date.today())
-            cad_data_fim = st.date_input("Data de Fim", value=date.today())
+            cad_data_ini = st.date_input("Data de Início (opcional)", value=None)
+            cad_data_fim = st.date_input("Data de Fim (opcional)", value=None)
             cad_horario = st.time_input("Horário", value=time(8, 0))
             cad_status = st.selectbox("Status", ["Planejada", "Em Andamento"])
 
@@ -551,14 +662,16 @@ with tab_cadastrar:
         if btn_cadastrar_op:
             if not cad_nome:
                 st.warning("⚠️ O nome da operação é obrigatório!")
+            elif cad_data_ini and cad_data_fim and cad_data_fim < cad_data_ini:
+                st.warning("⚠️ A data de fim não pode ser anterior à data de início.")
             else:
                 dados_nova_op = {
                     "nome": cad_nome,
                     "local": cad_local,
                     "cidade": cad_cidade,
                     "delegado_id": int(cad_delegado) if cad_delegado else None,
-                    "data_inicio": cad_data_ini.isoformat(),
-                    "data_fim": cad_data_fim.isoformat(),
+                    "data_inicio": cad_data_ini.isoformat() if cad_data_ini else None,
+                    "data_fim": cad_data_fim.isoformat() if cad_data_fim else None,
                     "horario": cad_horario.strftime("%H:%M:%S"),
                     "status": cad_status,
                     "objetivo": cad_objetivo,
