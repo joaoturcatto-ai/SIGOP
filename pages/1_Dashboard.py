@@ -1,89 +1,97 @@
 import streamlit as st
-from supabase import create_client, Client
+import pandas as pd
+from datetime import date
+from utils.db import fetch_table
 
-# Configuração da página do Streamlit
-st.set_page_config(page_title="Operações - SIGOP", layout="wide")
+st.set_page_config(page_title="Dashboard - SIGOP", page_icon="🏠", layout="wide")
+st.title("🏠 Dashboard")
 
-# 1. Conexão com o Supabase (garanta que as chaves estão configuradas no seu .env ou secrets)
-@st.cache_resource
-def init_connection():
-    url = st.secrets["supabase_url"]
-    key = st.secrets["supabase_key"]
-    return create_client(url, key)
+hoje = date.today()
 
 try:
-    supabase: Client = init_connection()
+    servidores = fetch_table("servidores")
+    operacoes = fetch_table("operacoes")
+    viaturas = fetch_table("viaturas")
+    afastamentos = fetch_table("afastamentos")
+    cqh = fetch_table("cqh")
 except Exception as e:
-    st.error(f"Erro ao conectar ao banco de dados: {e}")
+    st.error("⚠️ Erro ao carregar dados do banco.")
+    st.code(str(e), language="python")
     st.stop()
 
-# 2. Buscar delegados para preencher o campo de seleção (Dropdown)
-@st.cache_data(ttl=60)
-def buscar_delegados():
-    try:
-        # Busca os servidores que são delegados na tabela 'servidores'
-        resposta = supabase.table("servidores").select("nome").eq("cargo", "DELEGADO").execute()
-        # Retorna uma lista simples de nomes
-        return [servidor["nome"] for servidor in resposta.data]
-    except Exception:
-        # Caso ocorra algum erro ou a tabela seja diferente, retorna uma lista padrão de teste
-        return ["BRUNO MENDO PALMIRO", "MARLON RICHER", "VINICIUS", "Dra Eliane"]
+col1, col2, col3, col4 = st.columns(4)
+col1.metric("👮 Total de servidores", len(servidores) if not servidores.empty else 0)
+col2.metric("🚓 Viaturas cadastradas", len(viaturas) if not viaturas.empty else 0)
+col3.metric(
+    "🚨 Operações planejadas",
+    len(operacoes[operacoes["status"] == "Planejada"]) if not operacoes.empty else 0,
+)
+col4.metric(
+    "🏖️ Afastamentos ativos",
+    len(
+        afastamentos[
+            (pd.to_datetime(afastamentos["data_inicio"]).dt.date <= hoje)
+            & (pd.to_datetime(afastamentos["data_fim"]).dt.date >= hoje)
+        ]
+    )
+    if not afastamentos.empty
+    else 0,
+)
 
-lista_delegados = buscar_delegados()
+st.markdown("---")
 
-# --- INTERFACE DO USUÁRIO (FORMULÁRIO) ---
-st.title("📂 Cadastro de Operações")
-st.markdown("Preencha os campos abaixo para registrar uma nova operação no sistema.")
+col_a, col_b = st.columns(2)
 
-# Formulário para envio dos dados
-with st.form("form_operacao"):
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        nome_operacao = st.text_input("Nome da Operação", placeholder="Ex: Operação Devastate 6ª fase")
-        data_inicio = st.date_input("Data de Início")
-        local = st.text_input("Local", placeholder="Ex: Delegacia de Estelionato")
-        cidade = st.text_input("Cidade", placeholder="Ex: Cuiabá")
-        
-    with col2:
-        # Seleção do Delegado Responsável
-        delegado_selecionado = st.selectbox("Delegado Responsável", options=lista_delegados)
-        horario = st.time_input("Horário")
-        status = st.selectbox("Status", options=["Planejada", "Em Andamento", "Concluída", "Cancelada"])
-
-    objetivo = st.text_area("Objetivo da Operação", placeholder="Descreva os objetivos principais...")
-    briefing = st.text_area("Briefing / Instruções", placeholder="Diretrizes e detalhes estratégicos...")
-
-    # Botão de envio dentro do formulário
-    submetido = st.form_submit_button("💾 Criar Operação")
-
-# 3. Processamento do envio e gravação no Supabase
-if submetido:
-    if not nome_operacao or not cidade:
-        st.warning("⚠️ Por favor, preencha os campos obrigatórios (Nome da Operação e Cidade).")
+with col_a:
+    st.subheader("📅 Escala de CQH de hoje")
+    if not cqh.empty and not servidores.empty:
+        cqh_hoje = cqh[pd.to_datetime(cqh["data"]).dt.date == hoje]
+        if not cqh_hoje.empty:
+            cqh_hoje = cqh_hoje.merge(
+                servidores[["id", "nome", "cargo"]],
+                left_on="servidor_id",
+                right_on="id",
+                how="left",
+            )
+            st.dataframe(
+                cqh_hoje[["nome", "cargo", "equipe"]], use_container_width=True
+            )
+        else:
+            st.info("Nenhum servidor escalado no CQH para hoje.")
     else:
-        # Montagem dos dados exatamente como a tabela 'operacoes' espera no Supabase
-        dados_operacao = {
-            "nome": nome_operacao,
-            "data_inicio": str(data_inicio),
-            "horario": str(horario),
-            "local": local,
-            "cidade": cidade,
-            "delegado_responsavel": delegado_selecionado,  # <--- CORRIGIDO: Nome exato da coluna no Supabase
-            "objetivo": objetivo,
-            "status": status
-            # Se você possuir a coluna briefing no banco, pode descomentar a linha abaixo:
-            # "briefing": briefing 
-        }
+        st.info("Nenhum dado de CQH cadastrado ainda.")
 
-        try:
-            # Inserção segura no banco de dados
-            resposta = supabase.table("operacoes").insert(dados_operacao).execute()
-            
-            # Se deu certo, exibe mensagem de sucesso
-            st.success("🎉 Operação salva com sucesso no sistema!")
-            st.balloons()
-            
-        except Exception as erro:
-            st.error(f"Erro ao inserir dados na tabela operacoes: {erro}")
-            st.error("❌ Erro ao salvar operação.")
+with col_b:
+    st.subheader("🚨 Próximas operações")
+    if not operacoes.empty:
+        proximas = operacoes[pd.to_datetime(operacoes["data_fim"]).dt.date >= hoje]
+        proximas = proximas.sort_values("data_inicio").head(5)
+        if not proximas.empty:
+            st.dataframe(
+                proximas[["nome", "data_inicio", "data_fim", "horario", "local", "status"]],
+                use_container_width=True,
+            )
+        else:
+            st.info("Nenhuma operação futura cadastrada.")
+    else:
+        st.info("Nenhuma operação cadastrada ainda.")
+
+st.markdown("---")
+st.subheader("🏖️ Servidores afastados hoje")
+if not afastamentos.empty and not servidores.empty:
+    afastados_hoje = afastamentos[
+        (pd.to_datetime(afastamentos["data_inicio"]).dt.date <= hoje)
+        & (pd.to_datetime(afastamentos["data_fim"]).dt.date >= hoje)
+    ]
+    if not afastados_hoje.empty:
+        afastados_hoje = afastados_hoje.merge(
+            servidores[["id", "nome"]], left_on="servidor_id", right_on="id", how="left"
+        )
+        st.dataframe(
+            afastados_hoje[["nome", "tipo", "data_inicio", "data_fim"]],
+            use_container_width=True,
+        )
+    else:
+        st.info("Nenhum servidor afastado hoje.")
+else:
+    st.info("Nenhum afastamento cadastrado ainda.")
