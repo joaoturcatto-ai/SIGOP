@@ -62,7 +62,7 @@ def filtrar_por_busca(mapa: dict, termo: str) -> dict:
 
 
 # Carrega os dados necessários do banco
-df_operacoes = fetch_table("operacoes")
+df_operacoes = fetch_table("operacoes", order_by="id")
 df_servidores = fetch_table("servidores")
 df_viaturas = fetch_table("viaturas")
 df_equipes = fetch_table("equipes_operacoes")
@@ -81,8 +81,29 @@ with tab_gerenciar:
     else:
         st.subheader("Selecione uma operação para ver detalhes / editar")
 
-        opcoes_ops = {row["id"]: f"{row['nome']} ({pd.to_datetime(row['data_inicio']).strftime('%d/%m/%Y') if row.get('data_inicio') else 'Sem data'})" for _, row in df_operacoes.iterrows()}
-        id_op_selecionada = st.selectbox("Operações Cadastradas:", options=list(opcoes_ops.keys()), format_func=lambda x: opcoes_ops[x])
+        opcoes_ops = {
+            row["id"]: (
+                f"#{row['id']} — {row['nome']} "
+                f"({pd.to_datetime(row['data_inicio']).strftime('%d/%m/%Y') if row.get('data_inicio') else 'Sem data'})"
+            )
+            for _, row in df_operacoes.iterrows()
+        }
+
+        busca_op = st.text_input(
+            "🔎 Buscar operação por nome ou iniciais (ou deixe em branco para ver todas)",
+            key="busca_operacao",
+        )
+        opcoes_ops_filtradas = filtrar_por_busca(opcoes_ops, busca_op)
+        if busca_op and not opcoes_ops_filtradas:
+            st.warning("Nenhuma operação encontrada com esse termo.")
+        opcoes_ops_exibir = opcoes_ops_filtradas if opcoes_ops_filtradas else opcoes_ops
+
+        id_op_selecionada = st.selectbox(
+            "Operações Cadastradas:",
+            options=list(opcoes_ops_exibir.keys()),
+            format_func=lambda x: opcoes_ops_exibir.get(x, opcoes_ops.get(x, str(x))),
+            key="sel_operacao",
+        )
 
         if id_op_selecionada:
             op_sel = df_operacoes[df_operacoes["id"] == id_op_selecionada].iloc[0]
