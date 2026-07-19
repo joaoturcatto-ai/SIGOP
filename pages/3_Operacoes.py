@@ -368,12 +368,13 @@ with tab_gerenciar:
                         for _, row_m in membros_eq.iterrows():
                             cargo_funcao = "👑 LÍDER DE EQUIPE" if row_m.get("is_lider", False) else "Membro"
 
-                            if row_m.get("possui_folga", False) and row_m.get("folga_data"):
-                                datas_fmtd = formatar_datas_folga(row_m["folga_data"])
+                            if row_m.get("possui_folga", False):
+                                datas_fmtd = formatar_datas_folga(row_m.get("folga_data"))
+                                duracao_texto = row_m.get("folga_duracao") or "Integral"
                                 if datas_fmtd:
-                                    status_folga = f"📅 {row_m.get('folga_duracao', 'Integral')} em: {', '.join(datas_fmtd)}"
+                                    status_folga = f"📅 {duracao_texto} em: {', '.join(datas_fmtd)}"
                                 else:
-                                    status_folga = "❌ Sem folga registrada"
+                                    status_folga = f"📅 {duracao_texto} — data a definir"
                             else:
                                 status_folga = "❌ Sem folga registrada"
 
@@ -536,12 +537,13 @@ with tab_gerenciar:
                     for _, row_m in membros_eq.iterrows():
                         funcao_marcador = " [LÍDER]" if row_m.get("is_lider", False) else ""
 
-                        if row_m.get("possui_folga", False) and row_m.get("folga_data"):
-                            datas_fmtd_l = formatar_datas_folga(row_m["folga_data"])
+                        if row_m.get("possui_folga", False):
+                            datas_fmtd_l = formatar_datas_folga(row_m.get("folga_data"))
+                            duracao_texto_pdf = row_m.get("folga_duracao") or "Integral"
                             if datas_fmtd_l:
-                                folga_desc = f" (Folga {row_m.get('folga_duracao', 'Integral')} em: {', '.join(datas_fmtd_l)})"
+                                folga_desc = f" (Folga {duracao_texto_pdf} em: {', '.join(datas_fmtd_l)})"
                             else:
-                                folga_desc = " (Sem Folga)"
+                                folga_desc = f" (Direito a folga {duracao_texto_pdf} — data a definir após a operação)"
                         else:
                             folga_desc = " (Sem Folga)"
 
