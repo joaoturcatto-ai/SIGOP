@@ -145,8 +145,18 @@ def servidor_disponivel_periodo(
     return True, "Disponível"
 
 
-def viatura_disponivel(viatura_id: int, data_alvo: date) -> tuple[bool, str]:
-    """Verifica se uma viatura já está alocada em outra operação na mesma data."""
+def viatura_disponivel(
+    viatura_id: int,
+    data_alvo: date,
+    operacao_atual_id: int | None = None,
+    nome_equipe_atual: str | None = None,
+) -> tuple[bool, str]:
+    """Verifica se uma viatura já está alocada em outra operação na mesma data.
+
+    Se operacao_atual_id e nome_equipe_atual forem informados, um uso da
+    mesma viatura pela MESMA equipe dentro da MESMA operação não conta como
+    conflito (é normal vários membros da mesma equipe usarem o mesmo carro).
+    """
     operacoes = fetch_table("operacoes")
     participantes = fetch_table("equipes_operacoes")
     if operacoes.empty or participantes.empty:
@@ -164,18 +174,33 @@ def viatura_disponivel(viatura_id: int, data_alvo: date) -> tuple[bool, str]:
         (participantes["viatura_id"] == viatura_id)
         & (participantes["operacao_id"].isin(ids_ops_do_dia))
     ]
+
+    if operacao_atual_id is not None and nome_equipe_atual is not None and not conflito.empty:
+        conflito = conflito[
+            ~(
+                (conflito["operacao_id"] == operacao_atual_id)
+                & (conflito["nome_equipe"] == nome_equipe_atual)
+            )
+        ]
+
     if not conflito.empty:
-        return False, "Viatura já está escalada em outra operação nesta data."
+        return False, "Viatura já está escalada em outra operação/equipe nesta data."
     return True, "Disponível"
 
 
 def viatura_disponivel_periodo(
-    viatura_id: int, data_inicio: date, data_fim: date
+    viatura_id: int,
+    data_inicio: date,
+    data_fim: date,
+    operacao_atual_id: int | None = None,
+    nome_equipe_atual: str | None = None,
 ) -> tuple[bool, str]:
     """Verifica disponibilidade da viatura em todos os dias de um período."""
     dia = data_inicio
     while dia <= data_fim:
-        disponivel, motivo = viatura_disponivel(viatura_id, dia)
+        disponivel, motivo = viatura_disponivel(
+            viatura_id, dia, operacao_atual_id, nome_equipe_atual
+        )
         if not disponivel:
             return False, f"{motivo} (dia {dia})"
         dia += timedelta(days=1)
