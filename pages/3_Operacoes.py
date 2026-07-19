@@ -437,7 +437,9 @@ with tab_gerenciar:
                         motivo_viatura = ""
                         if add_viatura is not None:
                             viatura_ok, motivo_viatura = viatura_disponivel_periodo(
-                                int(add_viatura), data_ini_padrao, data_fim_padrao
+                                int(add_viatura), data_ini_padrao, data_fim_padrao,
+                                operacao_atual_id=int(operacao_id),
+                                nome_equipe_atual=add_nome_equipe,
                             )
                     else:
                         disponivel, motivo = True, ""
@@ -775,7 +777,9 @@ with tab_cadastrar:
                             viatura_ok, motivo_viatura = True, ""
                             if equipe_info["viatura"] is not None and cad_data_ini and cad_data_fim:
                                 viatura_ok, motivo_viatura = viatura_disponivel_periodo(
-                                    int(equipe_info["viatura"]), cad_data_ini, cad_data_fim
+                                    int(equipe_info["viatura"]), cad_data_ini, cad_data_fim,
+                                    operacao_atual_id=int(nova_operacao_id),
+                                    nome_equipe_atual=equipe_info["nome_equipe"],
                                 )
 
                             if not disponivel:
