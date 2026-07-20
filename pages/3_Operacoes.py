@@ -185,7 +185,8 @@ with tab_gerenciar:
 
                 with col1:
                     tipos_op = ["Operação", "Plantão/Evento"]
-                    tipo_atual = op_sel.get("tipo") or "Operação"
+                    tipo_raw = op_sel.get("tipo")
+                    tipo_atual = str(tipo_raw) if pd.notna(tipo_raw) else "Operação"
                     idx_tipo = tipos_op.index(tipo_atual) if tipo_atual in tipos_op else 0
                     edit_tipo = st.selectbox("Tipo", options=tipos_op, index=idx_tipo)
 
@@ -301,7 +302,8 @@ with tab_gerenciar:
                     curr_d += timedelta(days=1)
 
                 # Deriva o tipo/quantidade já salvos, para pré-preencher os campos
-                duracao_atual = policial_sel_info.get("folga_duracao") or "1 dia"
+                duracao_raw = policial_sel_info.get("folga_duracao")
+                duracao_atual = str(duracao_raw) if pd.notna(duracao_raw) else "1 dia"
                 if "Meio período" in duracao_atual:
                     tipo_dur_atual = "Meio período"
                     turno_atual = "Vespertino" if "Vespertino" in duracao_atual else "Matutino"
@@ -433,7 +435,8 @@ with tab_gerenciar:
 
                             if row_m.get("possui_folga", False):
                                 datas_fmtd = formatar_datas_folga(row_m.get("folga_data"))
-                                duracao_texto = row_m.get("folga_duracao") or "Integral"
+                                duracao_raw_m = row_m.get("folga_duracao")
+                                duracao_texto = str(duracao_raw_m) if pd.notna(duracao_raw_m) else "Integral"
                                 if datas_fmtd:
                                     status_folga = f"📅 {duracao_texto} em: {', '.join(datas_fmtd)}"
                                 else:
@@ -567,7 +570,8 @@ with tab_gerenciar:
             st.markdown("### 📄 Relatório / Ordem de Serviço")
 
             nome_operacao = op_sel.get("nome", "Operação Sem Nome")
-            tipo_op = op_sel.get("tipo") or "Operação"
+            tipo_raw_pdf = op_sel.get("tipo")
+            tipo_op = str(tipo_raw_pdf) if pd.notna(tipo_raw_pdf) else "Operação"
             cidade_op = op_sel.get("cidade", "N/D")
             local_op = op_sel.get("local", "N/D")
             data_ini_op = pd.to_datetime(op_sel.get("data_inicio")).strftime("%d/%m/%Y") if op_sel.get("data_inicio") else "N/D"
@@ -607,7 +611,8 @@ with tab_gerenciar:
 
                         if row_m.get("possui_folga", False):
                             datas_fmtd_l = formatar_datas_folga(row_m.get("folga_data"))
-                            duracao_texto_pdf = row_m.get("folga_duracao") or "Integral"
+                            duracao_raw_pdf = row_m.get("folga_duracao")
+                            duracao_texto_pdf = str(duracao_raw_pdf) if pd.notna(duracao_raw_pdf) else "Integral"
                             if datas_fmtd_l:
                                 folga_desc = f" (Folga {duracao_texto_pdf} em: {', '.join(datas_fmtd_l)})"
                             else:
