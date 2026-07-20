@@ -10,7 +10,7 @@ st.caption("Estatísticas de emprego do efetivo em operações")
 try:
     servidores = fetch_table("servidores")
     operacoes = fetch_table("operacoes")
-    participantes = fetch_table("operacao_participantes")
+    participantes = fetch_table("equipes_operacoes")
     cqh = fetch_table("cqh")
 except Exception as e:
     st.error("⚠️ Erro ao carregar dados.")
