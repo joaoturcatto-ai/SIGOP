@@ -29,8 +29,9 @@ TABLE_COLUMNS = {
     ],
     "viaturas": ["id", "identificacao", "modelo", "status", "placa_oficial", "placa_reservada", "created_at"],
     "operacoes": [
-        "id", "nome", "data_inicio", "data_fim", "horario", "local", "cidade",
-        "delegado_id", "delegado_responsavel", "objetivo", "briefing", "status", "created_at",
+        "id", "nome", "tipo", "data_inicio", "data_fim", "horario", "horario_fim_previsto",
+        "local", "cidade", "delegado_id", "delegado_responsavel",
+        "objetivo", "briefing", "status", "created_at",
     ],
     "operacao_participantes": [
         "id", "operacao_id", "servidor_id", "equipe", "viatura_id",
@@ -116,9 +117,20 @@ def servidor_disponivel(servidor_id: int, data_alvo: date) -> tuple[bool, str]:
     operacoes = fetch_table("operacoes")
     participantes = fetch_table("equipes_operacoes")
     if not operacoes.empty and not participantes.empty:
+        data_fim_op = pd.to_datetime(operacoes["data_fim"]).dt.date
+        tem_horario_fim = (
+            operacoes["horario_fim_previsto"].notna()
+            if "horario_fim_previsto" in operacoes.columns
+            else pd.Series(False, index=operacoes.index)
+        )
+        # Se a operação tem horário de término previsto definido, entendemos que
+        # ela termina de madrugada e o último dia (data_fim) não bloqueia a
+        # pessoa/viatura para outros compromissos nesse mesmo dia.
+        data_fim_efetiva = data_fim_op.where(~tem_horario_fim, data_fim_op - timedelta(days=1))
+
         ops_do_dia = operacoes[
             (pd.to_datetime(operacoes["data_inicio"]).dt.date <= data_alvo)
-            & (pd.to_datetime(operacoes["data_fim"]).dt.date >= data_alvo)
+            & (data_fim_efetiva >= data_alvo)
         ]
         if not ops_do_dia.empty:
             ids_ops_do_dia = ops_do_dia["id"].tolist()
@@ -164,7 +176,15 @@ def viatura_disponivel(
 
     ops_do_dia = operacoes[
         (pd.to_datetime(operacoes["data_inicio"]).dt.date <= data_alvo)
-        & (pd.to_datetime(operacoes["data_fim"]).dt.date >= data_alvo)
+        & (
+            pd.to_datetime(operacoes["data_fim"]).dt.date.where(
+                operacoes["horario_fim_previsto"].isna()
+                if "horario_fim_previsto" in operacoes.columns
+                else pd.Series(True, index=operacoes.index),
+                pd.to_datetime(operacoes["data_fim"]).dt.date - timedelta(days=1),
+            )
+            >= data_alvo
+        )
     ]
     if ops_do_dia.empty:
         return True, "Disponível"
