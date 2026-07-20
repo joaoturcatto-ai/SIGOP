@@ -81,9 +81,11 @@ with tab_gerenciar:
     else:
         st.subheader("Selecione uma operação para ver detalhes / editar")
 
+        ICONE_TIPO_OP = {"Operação": "🎯", "Plantão/Evento": "🕐"}
+
         opcoes_ops = {
             row["id"]: (
-                f"#{row['id']} — {row['nome']} "
+                f"#{row['id']} {ICONE_TIPO_OP.get(row.get('tipo') or 'Operação', '🎯')} — {row['nome']} "
                 f"({pd.to_datetime(row['data_inicio']).strftime('%d/%m/%Y') if row.get('data_inicio') else 'Sem data'})"
             )
             for _, row in df_operacoes.iterrows()
@@ -125,6 +127,17 @@ with tab_gerenciar:
                     hora_padrao = datetime.strptime(str(hora_raw), "%H:%M").time() if hora_raw else time(8, 0)
                 except Exception:
                     hora_padrao = time(8, 0)
+
+            hora_fim_raw = op_sel.get("horario_fim_previsto")
+            hora_fim_padrao = None
+            if hora_fim_raw:
+                try:
+                    hora_fim_padrao = datetime.strptime(str(hora_fim_raw), "%H:%M:%S").time()
+                except Exception:
+                    try:
+                        hora_fim_padrao = datetime.strptime(str(hora_fim_raw), "%H:%M").time()
+                    except Exception:
+                        hora_fim_padrao = None
 
             delegados = df_servidores[df_servidores["cargo"].str.contains("Delegado", case=False, na=False)] if not df_servidores.empty else pd.DataFrame()
             mapa_del = {row["id"]: row["nome"] for _, row in delegados.iterrows()} if not delegados.empty else {}
@@ -171,6 +184,11 @@ with tab_gerenciar:
                 col1, col2 = st.columns(2)
 
                 with col1:
+                    tipos_op = ["Operação", "Plantão/Evento"]
+                    tipo_atual = op_sel.get("tipo") or "Operação"
+                    idx_tipo = tipos_op.index(tipo_atual) if tipo_atual in tipos_op else 0
+                    edit_tipo = st.selectbox("Tipo", options=tipos_op, index=idx_tipo)
+
                     edit_nome = st.text_input("Nome da Operação", value=str(op_sel.get("nome", "")))
                     edit_local = st.text_input("Local / Ponto de Encontro", value=str(op_sel.get("local", "")))
                     if cidade_selecionada_edit == "— Digitar nova cidade —":
@@ -183,7 +201,13 @@ with tab_gerenciar:
                 with col2:
                     edit_data_ini = st.date_input("Data de Início (opcional)", value=data_ini_padrao)
                     edit_data_fim = st.date_input("Data de Fim (opcional)", value=data_fim_padrao)
-                    edit_horario = st.time_input("Horário", value=hora_padrao)
+                    edit_horario = st.time_input("Horário de início", value=hora_padrao)
+                    edit_horario_fim = st.time_input(
+                        "Horário de término previsto (opcional)",
+                        value=hora_fim_padrao,
+                        help="Preencha se a operação termina de madrugada — assim o último dia não "
+                        "bloqueia a pessoa/viatura para outros compromissos nesse mesmo dia.",
+                    )
 
                     status_atual = str(op_sel.get("status", "Planejada"))
                     lista_status = ["Planejada", "Em Andamento", "Concluída", "Cancelada"]
@@ -206,12 +230,14 @@ with tab_gerenciar:
                     else:
                         dados_atualizados = {
                             "nome": edit_nome,
+                            "tipo": edit_tipo,
                             "local": edit_local,
                             "cidade": edit_cidade,
                             "delegado_id": int(edit_delegado) if edit_delegado else None,
                             "data_inicio": edit_data_ini.isoformat() if edit_data_ini else None,
                             "data_fim": edit_data_fim.isoformat() if edit_data_fim else None,
                             "horario": edit_horario.strftime("%H:%M:%S"),
+                            "horario_fim_previsto": edit_horario_fim.strftime("%H:%M:%S") if edit_horario_fim else None,
                             "status": edit_status,
                             "objetivo": edit_objetivo,
                             "briefing": edit_briefing
@@ -274,11 +300,21 @@ with tab_gerenciar:
                     datas_disponiveis.append(curr_d.strftime("%Y-%m-%d"))
                     curr_d += timedelta(days=1)
 
-                duracoes_possiveis = ["Meio período (Matutino)", "Meio período (Vespertino)", "Integral"]
-                duracao_atual = policial_sel_info.get("folga_duracao", "Integral")
-                idx_duracao = duracoes_possiveis.index(duracao_atual) if duracao_atual in duracoes_possiveis else 2
+                # Deriva o tipo/quantidade já salvos, para pré-preencher os campos
+                duracao_atual = policial_sel_info.get("folga_duracao") or "1 dia"
+                if "Meio período" in duracao_atual:
+                    tipo_dur_atual = "Meio período"
+                    turno_atual = "Vespertino" if "Vespertino" in duracao_atual else "Matutino"
+                    qtd_dias_atual = 1
+                else:
+                    tipo_dur_atual = "Dias inteiros"
+                    turno_atual = "Matutino"
+                    try:
+                        qtd_dias_atual = int(str(duracao_atual).split()[0])
+                    except (ValueError, IndexError):
+                        qtd_dias_atual = 1
 
-                col_cf1, col_cf2, col_cf3 = st.columns([1.5, 3, 1.5])
+                col_cf1, col_cf2 = st.columns([1.5, 3])
                 with col_cf1:
                     definir_possui_folga = st.checkbox("Este policial terá direito a folga?", value=possui_folga_atual, key=f"chk_{id_registro_selecionado}")
                 with col_cf2:
@@ -291,8 +327,35 @@ with tab_gerenciar:
                         disabled=not definir_possui_folga,
                         key=f"multi_dt_{id_registro_selecionado}"
                     )
+
+                col_cf3, col_cf4 = st.columns([1.5, 1.5])
                 with col_cf3:
-                    definir_folga_duracao = st.selectbox("Período da folga", options=duracoes_possiveis, index=idx_duracao, disabled=not definir_possui_folga, key=f"dur_{id_registro_selecionado}")
+                    tipo_duracao_sel = st.radio(
+                        "Tipo de folga",
+                        ["Meio período", "Dias inteiros"],
+                        index=0 if tipo_dur_atual == "Meio período" else 1,
+                        horizontal=True,
+                        disabled=not definir_possui_folga,
+                        key=f"tipo_dur_{id_registro_selecionado}",
+                    )
+                with col_cf4:
+                    if tipo_duracao_sel == "Meio período":
+                        turno_sel = st.selectbox(
+                            "Turno",
+                            ["Matutino", "Vespertino"],
+                            index=0 if turno_atual == "Matutino" else 1,
+                            disabled=not definir_possui_folga,
+                            key=f"turno_{id_registro_selecionado}",
+                        )
+                        definir_folga_duracao = f"Meio período ({turno_sel})"
+                    else:
+                        qtd_dias_sel = st.number_input(
+                            "Quantidade de dias",
+                            min_value=1, max_value=90, value=qtd_dias_atual, step=1,
+                            disabled=not definir_possui_folga,
+                            key=f"qtd_dias_{id_registro_selecionado}",
+                        )
+                        definir_folga_duracao = f"{int(qtd_dias_sel)} dia" + ("s" if qtd_dias_sel != 1 else "")
 
                 if st.button("💾 Salvar Folga do Policial Selecionado", type="primary"):
                     dados_folga_atualizar = {
@@ -504,11 +567,16 @@ with tab_gerenciar:
             st.markdown("### 📄 Relatório / Ordem de Serviço")
 
             nome_operacao = op_sel.get("nome", "Operação Sem Nome")
+            tipo_op = op_sel.get("tipo") or "Operação"
             cidade_op = op_sel.get("cidade", "N/D")
             local_op = op_sel.get("local", "N/D")
             data_ini_op = pd.to_datetime(op_sel.get("data_inicio")).strftime("%d/%m/%Y") if op_sel.get("data_inicio") else "N/D"
             data_fim_op = pd.to_datetime(op_sel.get("data_fim")).strftime("%d/%m/%Y") if op_sel.get("data_fim") else "N/D"
             horario_op = str(op_sel.get("horario", "N/D"))
+            horario_fim_op = op_sel.get("horario_fim_previsto")
+            horario_op_completo = (
+                f"{horario_op} até {horario_fim_op} (previsto)" if horario_fim_op else horario_op
+            )
             delegado_nome = mapa_servidores.get(op_sel.get("delegado_id"), "Não informado")
             objetivo_op = op_sel.get("objetivo", "Não detalhado")
             briefing_op = op_sel.get("briefing", "Não detalhado")
@@ -559,12 +627,16 @@ with tab_gerenciar:
 
                 <table style="width: 100%; border-collapse: collapse; margin-bottom: 15px;">
                     <tr>
-                        <td style="padding: 5px; font-weight: bold; width: 25%;">Operação:</td>
+                        <td style="padding: 5px; font-weight: bold; width: 25%;">Tipo:</td>
+                        <td style="padding: 5px;">{tipo_op}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 5px; font-weight: bold;">Operação:</td>
                         <td style="padding: 5px;">{nome_operacao}</td>
                     </tr>
                     <tr>
                         <td style="padding: 5px; font-weight: bold;">Período:</td>
-                        <td style="padding: 5px;">{data_ini_op} até {data_fim_op} às {horario_op}</td>
+                        <td style="padding: 5px;">{data_ini_op} até {data_fim_op} às {horario_op_completo}</td>
                     </tr>
                     <tr>
                         <td style="padding: 5px; font-weight: bold;">Local / Cidade:</td>
@@ -677,7 +749,11 @@ with tab_cadastrar:
         col_c1, col_c2 = st.columns(2)
 
         with col_c1:
-            cad_nome = st.text_input("Nome da Operação", placeholder="Ex: Operação Devastate")
+            cad_tipo = st.selectbox("Tipo", options=["Operação", "Plantão/Evento"])
+            cad_nome = st.text_input(
+                "Nome da Operação",
+                placeholder="Ex: Operação Devastate ou Plantão de Final de Semana",
+            )
             cad_local = st.text_input("Ponto de Encontro / Local", placeholder="Ex: Sede da Diretoria")
             if cidade_selecionada_novo == "— Digitar nova cidade —":
                 cad_cidade = st.text_input("Digite a nova cidade", placeholder="Ex: Cuiabá")
@@ -694,7 +770,13 @@ with tab_cadastrar:
         with col_c2:
             cad_data_ini = st.date_input("Data de Início (opcional)", value=None)
             cad_data_fim = st.date_input("Data de Fim (opcional)", value=None)
-            cad_horario = st.time_input("Horário", value=time(8, 0))
+            cad_horario = st.time_input("Horário de início", value=time(8, 0))
+            cad_horario_fim = st.time_input(
+                "Horário de término previsto (opcional)",
+                value=None,
+                help="Preencha se a operação termina de madrugada — assim o último dia não "
+                "bloqueia a pessoa/viatura para outros compromissos nesse mesmo dia.",
+            )
             cad_status = st.selectbox("Status", ["Planejada", "Em Andamento"])
 
         st.markdown("---")
@@ -746,12 +828,14 @@ with tab_cadastrar:
             else:
                 dados_nova_op = {
                     "nome": cad_nome,
+                    "tipo": cad_tipo,
                     "local": cad_local,
                     "cidade": cad_cidade,
                     "delegado_id": int(cad_delegado) if cad_delegado else None,
                     "data_inicio": cad_data_ini.isoformat() if cad_data_ini else None,
                     "data_fim": cad_data_fim.isoformat() if cad_data_fim else None,
                     "horario": cad_horario.strftime("%H:%M:%S"),
+                    "horario_fim_previsto": cad_horario_fim.strftime("%H:%M:%S") if cad_horario_fim else None,
                     "status": cad_status,
                     "objetivo": cad_objetivo,
                     "briefing": cad_briefing
