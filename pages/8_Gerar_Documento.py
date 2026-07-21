@@ -41,6 +41,18 @@ def placa_disponivel(row):
     return "Sem Placa"
 
 
+def nome_membro_equipe(row_m, mapa_servidores_local):
+    """Retorna o nome de exibição de um membro da equipe, seja ele um
+    servidor cadastrado no sistema ou uma pessoa externa (sem servidor_id)."""
+    sid = row_m.get("servidor_id")
+    if pd.notna(sid):
+        return mapa_servidores_local.get(int(sid), "Não encontrado")
+    nome_ext = row_m.get("nome_externo")
+    if pd.notna(nome_ext) and str(nome_ext).strip():
+        return f"{nome_ext} (Externo)"
+    return "Pessoa externa (sem nome)"
+
+
 try:
     operacoes = fetch_table("operacoes", order_by="data_inicio")
     servidores = fetch_table("servidores")
@@ -101,7 +113,7 @@ if not participantes_op.empty:
 
         lider_membros = membros_eq[membros_eq.get("is_lider", False) == True]
         lider_nome = (
-            mapa_servidores_doc.get(lider_membros.iloc[0]["servidor_id"], "Não encontrado")
+            nome_membro_equipe(lider_membros.iloc[0], mapa_servidores_doc)
             if not lider_membros.empty
             else "Não definido"
         )
@@ -115,8 +127,8 @@ if not participantes_op.empty:
 
         membros_lista = []
         for _, r in membros_eq.iterrows():
-            nome_m = mapa_servidores_doc.get(r["servidor_id"], "Não encontrado")
-            cargo_m = mapa_cargo_doc.get(r["servidor_id"], "")
+            nome_m = nome_membro_equipe(r, mapa_servidores_doc)
+            cargo_m = mapa_cargo_doc.get(r["servidor_id"], "") if pd.notna(r.get("servidor_id")) else "Externo"
             marcador = " [LÍDER]" if r.get("is_lider", False) else ""
 
             if r.get("possui_folga", False):
@@ -163,6 +175,7 @@ if equipes_doc:
         df_eq = pd.DataFrame(
             [{"Nome": f"{m['nome']}{m['marcador']}", "Cargo": m["cargo"], "Folga": m["folga"]} for m in eq["membros"]]
         )
+        df_eq.index = df_eq.index + 1
         st.dataframe(df_eq, use_container_width=True)
 else:
     st.info("Nenhuma equipe escalada nesta operação ainda. Vá em 'Operações' para montar as equipes.")
