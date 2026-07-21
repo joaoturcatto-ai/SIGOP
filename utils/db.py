@@ -38,7 +38,7 @@ TABLE_COLUMNS = {
         "folga_concedida", "created_at",
     ],
     "equipes_operacoes": [
-        "id", "operacao_id", "servidor_id", "nome_equipe", "viatura_id",
+        "id", "operacao_id", "servidor_id", "nome_externo", "nome_equipe", "viatura_id",
         "is_lider", "possui_folga", "folga_data", "folga_duracao",
         "referencia_operacao", "created_at",
     ],
