@@ -426,9 +426,11 @@ with tab_gerenciar:
             # --- SEÇÃO 2: EQUIPES SEPARADAS E ESCALADAS ---
             st.markdown("### 👥 Equipes e Efetivos")
 
-            equipes_existentes = ["Equipe Externa", "Equipe na Delegacia/BASE"] + [
-                f"Equipe {i:02d}" for i in range(1, 21)
-            ]
+            equipes_existentes = (
+                [f"Equipe Externa {i:02d}" for i in range(1, 11)]
+                + ["Equipe na Delegacia/BASE"]
+                + [f"Equipe {i:02d}" for i in range(1, 21)]
+            )
 
             if not df_equipe_op.empty:
                 for eq_nome in sorted(df_equipe_op["nome_equipe"].unique()):
@@ -493,7 +495,7 @@ with tab_gerenciar:
                 "Escolha a Equipe", options=equipes_existentes, key="sel_equipe_add_policial"
             )
 
-            eh_equipe_externa = add_nome_equipe == "Equipe Externa"
+            eh_equipe_externa = add_nome_equipe.startswith("Equipe Externa")
 
             if not eh_equipe_externa:
                 busca_add_policial = st.text_input(
