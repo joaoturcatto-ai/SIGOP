@@ -61,6 +61,18 @@ def filtrar_por_busca(mapa: dict, termo: str) -> dict:
     return resultado
 
 
+def nome_membro_equipe(row_m, mapa_servidores_local):
+    """Retorna o nome de exibição de um membro da equipe, seja ele um
+    servidor cadastrado no sistema ou uma pessoa externa (sem servidor_id)."""
+    sid = row_m.get("servidor_id")
+    if pd.notna(sid):
+        return mapa_servidores_local.get(int(sid), "Não encontrado")
+    nome_ext = row_m.get("nome_externo")
+    if pd.notna(nome_ext) and str(nome_ext).strip():
+        return f"{nome_ext} (Externo)"
+    return "Pessoa externa (sem nome)"
+
+
 # Carrega os dados necessários do banco
 df_operacoes = fetch_table("operacoes", order_by="id")
 df_servidores = fetch_table("servidores")
@@ -264,150 +276,159 @@ with tab_gerenciar:
             if df_equipe_op.empty:
                 st.info("Cadastre policiais em alguma equipe abaixo antes de definir as folgas individuais.")
             else:
-                opcoes_policiais_folga = {
-                    row["id"]: f"{mapa_servidores.get(row['servidor_id'], 'Policial')} ({row['nome_equipe']})"
-                    for _, row in df_equipe_op.iterrows()
-                }
-
-                id_registro_selecionado = st.selectbox(
-                    "Selecione o policial para definir/alterar a folga:",
-                    options=list(opcoes_policiais_folga.keys()),
-                    format_func=lambda x: opcoes_policiais_folga[x]
-                )
-
-                policial_sel_info = df_equipe_op[df_equipe_op["id"] == id_registro_selecionado].iloc[0]
-
-                possui_folga_atual = bool(policial_sel_info.get("possui_folga", False))
-
-                # Resgata as datas salvas anteriormente (se houver) para pré-selecionar no multiselect
-                datas_salvas_str = policial_sel_info.get("folga_data", "")
-                datas_padrao_list = []
-                if datas_salvas_str:
-                    datas_padrao_list = [
-                        d.strip() for d in str(datas_salvas_str).split(",")
-                        if d.strip() and d.strip().lower() not in ("nan", "none", "nat")
-                    ]
-
-                # Gera as datas possíveis com base no período da operação (ou dos próximos 30 dias se o período for inválido)
-                hoje = date.today()
-                op_start = data_ini_padrao if data_ini_padrao else hoje
-                op_end = data_fim_padrao if data_fim_padrao else hoje + timedelta(days=15)
-
-                # Cria a lista de opções de datas para o usuário clicar
-                datas_disponiveis = []
-                curr_d = op_start
-                limit_d = max(op_end, op_start + timedelta(days=15)) # Garante pelo menos 15 dias de opções
-                while curr_d <= limit_d:
-                    datas_disponiveis.append(curr_d.strftime("%Y-%m-%d"))
-                    curr_d += timedelta(days=1)
-
-                # Deriva o tipo/quantidade já salvos, para pré-preencher os campos
-                duracao_raw = policial_sel_info.get("folga_duracao")
-                duracao_atual = str(duracao_raw) if pd.notna(duracao_raw) else "1 dia"
-                if "Meio período" in duracao_atual:
-                    tipo_dur_atual = "Meio período"
-                    turno_atual = "Vespertino" if "Vespertino" in duracao_atual else "Matutino"
-                    qtd_dias_atual = 1
+                df_equipe_op_internos = df_equipe_op[df_equipe_op["servidor_id"].notna()]
+                if df_equipe_op_internos.empty:
+                    st.info(
+                        "Apenas pessoas externas estão escaladas nesta operação até o momento. "
+                        "Folga não se aplica a integrantes de Equipe Externa."
+                    )
                 else:
-                    tipo_dur_atual = "Dias inteiros"
-                    turno_atual = "Matutino"
-                    try:
-                        qtd_dias_atual = int(str(duracao_atual).split()[0])
-                    except (ValueError, IndexError):
-                        qtd_dias_atual = 1
-
-                col_cf1, col_cf2 = st.columns([1.5, 3])
-                with col_cf1:
-                    definir_possui_folga = st.checkbox("Este policial terá direito a folga?", value=possui_folga_atual, key=f"chk_{id_registro_selecionado}")
-                with col_cf2:
-                    # Multiselect para datas alternadas livres!
-                    definir_folgas_selecionadas = st.multiselect(
-                        "Selecione uma ou mais datas alternadas de folga:",
-                        options=datas_disponiveis,
-                        default=[d for d in datas_padrao_list if d in datas_disponiveis],
-                        format_func=lambda x: pd.to_datetime(x).strftime("%d/%m/%Y"),
-                        disabled=not definir_possui_folga,
-                        key=f"multi_dt_{id_registro_selecionado}"
-                    )
-
-                col_cf3, col_cf4 = st.columns([1.5, 1.5])
-                with col_cf3:
-                    tipo_duracao_sel = st.radio(
-                        "Tipo de folga",
-                        ["Meio período", "Dias inteiros"],
-                        index=0 if tipo_dur_atual == "Meio período" else 1,
-                        horizontal=True,
-                        disabled=not definir_possui_folga,
-                        key=f"tipo_dur_{id_registro_selecionado}",
-                    )
-                with col_cf4:
-                    if tipo_duracao_sel == "Meio período":
-                        turno_sel = st.selectbox(
-                            "Turno",
-                            ["Matutino", "Vespertino"],
-                            index=0 if turno_atual == "Matutino" else 1,
-                            disabled=not definir_possui_folga,
-                            key=f"turno_{id_registro_selecionado}",
-                        )
-                        definir_folga_duracao = f"Meio período ({turno_sel})"
-                    else:
-                        qtd_dias_sel = st.number_input(
-                            "Quantidade de dias",
-                            min_value=1, max_value=90, value=qtd_dias_atual, step=1,
-                            disabled=not definir_possui_folga,
-                            key=f"qtd_dias_{id_registro_selecionado}",
-                        )
-                        definir_folga_duracao = f"{int(qtd_dias_sel)} dia" + ("s" if qtd_dias_sel != 1 else "")
-
-                if st.button("💾 Salvar Folga do Policial Selecionado", type="primary"):
-                    dados_folga_atualizar = {
-                        "possui_folga": bool(definir_possui_folga),
-                        "folga_data": ",".join(definir_folgas_selecionadas) if definir_possui_folga and definir_folgas_selecionadas else None,
-                        "folga_duracao": definir_folga_duracao if definir_possui_folga else None,
-                        "referencia_operacao": nome_operacao_atual if definir_possui_folga else None
+                    opcoes_policiais_folga = {
+                        row["id"]: f"{mapa_servidores.get(row['servidor_id'], 'Policial')} ({row['nome_equipe']})"
+                        for _, row in df_equipe_op_internos.iterrows()
                     }
-                    update_row("equipes_operacoes", id_registro_selecionado, dados_folga_atualizar)
 
-                    # --- Sincroniza com a tabela 'afastamentos' para que a folga  ---
-                    # --- realmente bloqueie o servidor em outras escalas/CQH.     ---
-                    tag_referencia = f"[ref:eq{id_registro_selecionado}]"
-                    servidor_da_folga = int(policial_sel_info["servidor_id"])
+                    id_registro_selecionado = st.selectbox(
+                        "Selecione o policial para definir/alterar a folga:",
+                        options=list(opcoes_policiais_folga.keys()),
+                        format_func=lambda x: opcoes_policiais_folga[x]
+                    )
 
-                    afastamentos_existentes = fetch_table("afastamentos")
-                    if not afastamentos_existentes.empty:
-                        antigos = afastamentos_existentes[
-                            afastamentos_existentes["observacoes"].astype(str).str.contains(
-                                tag_referencia, regex=False, na=False
-                            )
+                    policial_sel_info = df_equipe_op[df_equipe_op["id"] == id_registro_selecionado].iloc[0]
+
+                    possui_folga_atual = bool(policial_sel_info.get("possui_folga", False))
+
+                    # Resgata as datas salvas anteriormente (se houver) para pré-selecionar no multiselect
+                    datas_salvas_str = policial_sel_info.get("folga_data", "")
+                    datas_padrao_list = []
+                    if datas_salvas_str:
+                        datas_padrao_list = [
+                            d.strip() for d in str(datas_salvas_str).split(",")
+                            if d.strip() and d.strip().lower() not in ("nan", "none", "nat")
                         ]
-                        for antigo_id in antigos["id"].tolist():
-                            delete_row("afastamentos", antigo_id)
 
-                    if definir_possui_folga and definir_folgas_selecionadas:
-                        for data_folga_str in definir_folgas_selecionadas:
-                            insert_row(
-                                "afastamentos",
-                                {
-                                    "servidor_id": servidor_da_folga,
-                                    "tipo": "Folga Operacional",
-                                    "data_inicio": data_folga_str,
-                                    "data_fim": data_folga_str,
-                                    "observacoes": (
-                                        f"Folga ({definir_folga_duracao}) referente à operação "
-                                        f"'{nome_operacao_atual}'. {tag_referencia}"
-                                    ),
-                                },
+                    # Gera as datas possíveis com base no período da operação (ou dos próximos 30 dias se o período for inválido)
+                    hoje = date.today()
+                    op_start = data_ini_padrao if data_ini_padrao else hoje
+                    op_end = data_fim_padrao if data_fim_padrao else hoje + timedelta(days=15)
+
+                    # Cria a lista de opções de datas para o usuário clicar
+                    datas_disponiveis = []
+                    curr_d = op_start
+                    limit_d = max(op_end, op_start + timedelta(days=15)) # Garante pelo menos 15 dias de opções
+                    while curr_d <= limit_d:
+                        datas_disponiveis.append(curr_d.strftime("%Y-%m-%d"))
+                        curr_d += timedelta(days=1)
+
+                    # Deriva o tipo/quantidade já salvos, para pré-preencher os campos
+                    duracao_raw = policial_sel_info.get("folga_duracao")
+                    duracao_atual = str(duracao_raw) if pd.notna(duracao_raw) else "1 dia"
+                    if "Meio período" in duracao_atual:
+                        tipo_dur_atual = "Meio período"
+                        turno_atual = "Vespertino" if "Vespertino" in duracao_atual else "Matutino"
+                        qtd_dias_atual = 1
+                    else:
+                        tipo_dur_atual = "Dias inteiros"
+                        turno_atual = "Matutino"
+                        try:
+                            qtd_dias_atual = int(str(duracao_atual).split()[0])
+                        except (ValueError, IndexError):
+                            qtd_dias_atual = 1
+
+                    col_cf1, col_cf2 = st.columns([1.5, 3])
+                    with col_cf1:
+                        definir_possui_folga = st.checkbox("Este policial terá direito a folga?", value=possui_folga_atual, key=f"chk_{id_registro_selecionado}")
+                    with col_cf2:
+                        # Multiselect para datas alternadas livres!
+                        definir_folgas_selecionadas = st.multiselect(
+                            "Selecione uma ou mais datas alternadas de folga:",
+                            options=datas_disponiveis,
+                            default=[d for d in datas_padrao_list if d in datas_disponiveis],
+                            format_func=lambda x: pd.to_datetime(x).strftime("%d/%m/%Y"),
+                            disabled=not definir_possui_folga,
+                            key=f"multi_dt_{id_registro_selecionado}"
+                        )
+
+                    col_cf3, col_cf4 = st.columns([1.5, 1.5])
+                    with col_cf3:
+                        tipo_duracao_sel = st.radio(
+                            "Tipo de folga",
+                            ["Meio período", "Dias inteiros"],
+                            index=0 if tipo_dur_atual == "Meio período" else 1,
+                            horizontal=True,
+                            disabled=not definir_possui_folga,
+                            key=f"tipo_dur_{id_registro_selecionado}",
+                        )
+                    with col_cf4:
+                        if tipo_duracao_sel == "Meio período":
+                            turno_sel = st.selectbox(
+                                "Turno",
+                                ["Matutino", "Vespertino"],
+                                index=0 if turno_atual == "Matutino" else 1,
+                                disabled=not definir_possui_folga,
+                                key=f"turno_{id_registro_selecionado}",
                             )
+                            definir_folga_duracao = f"Meio período ({turno_sel})"
+                        else:
+                            qtd_dias_sel = st.number_input(
+                                "Quantidade de dias",
+                                min_value=1, max_value=90, value=qtd_dias_atual, step=1,
+                                disabled=not definir_possui_folga,
+                                key=f"qtd_dias_{id_registro_selecionado}",
+                            )
+                            definir_folga_duracao = f"{int(qtd_dias_sel)} dia" + ("s" if qtd_dias_sel != 1 else "")
 
-                    st.toast(f"Folgas salvas para {mapa_servidores.get(policial_sel_info['servidor_id'])}!", icon="🌴")
-                    st.rerun()
+                    if st.button("💾 Salvar Folga do Policial Selecionado", type="primary"):
+                        dados_folga_atualizar = {
+                            "possui_folga": bool(definir_possui_folga),
+                            "folga_data": ",".join(definir_folgas_selecionadas) if definir_possui_folga and definir_folgas_selecionadas else None,
+                            "folga_duracao": definir_folga_duracao if definir_possui_folga else None,
+                            "referencia_operacao": nome_operacao_atual if definir_possui_folga else None
+                        }
+                        update_row("equipes_operacoes", id_registro_selecionado, dados_folga_atualizar)
+
+                        # --- Sincroniza com a tabela 'afastamentos' para que a folga  ---
+                        # --- realmente bloqueie o servidor em outras escalas/CQH.     ---
+                        tag_referencia = f"[ref:eq{id_registro_selecionado}]"
+                        servidor_da_folga = int(policial_sel_info["servidor_id"])
+
+                        afastamentos_existentes = fetch_table("afastamentos")
+                        if not afastamentos_existentes.empty:
+                            antigos = afastamentos_existentes[
+                                afastamentos_existentes["observacoes"].astype(str).str.contains(
+                                    tag_referencia, regex=False, na=False
+                                )
+                            ]
+                            for antigo_id in antigos["id"].tolist():
+                                delete_row("afastamentos", antigo_id)
+
+                        if definir_possui_folga and definir_folgas_selecionadas:
+                            for data_folga_str in definir_folgas_selecionadas:
+                                insert_row(
+                                    "afastamentos",
+                                    {
+                                        "servidor_id": servidor_da_folga,
+                                        "tipo": "Folga Operacional",
+                                        "data_inicio": data_folga_str,
+                                        "data_fim": data_folga_str,
+                                        "observacoes": (
+                                            f"Folga ({definir_folga_duracao}) referente à operação "
+                                            f"'{nome_operacao_atual}'. {tag_referencia}"
+                                        ),
+                                    },
+                                )
+
+                        st.toast(f"Folgas salvas para {mapa_servidores.get(policial_sel_info['servidor_id'])}!", icon="🌴")
+                        st.rerun()
 
             st.markdown("---")
 
             # --- SEÇÃO 2: EQUIPES SEPARADAS E ESCALADAS ---
             st.markdown("### 👥 Equipes e Efetivos")
 
-            equipes_existentes = [f"Equipe {i:02d}" for i in range(1, 21)]
+            equipes_existentes = ["Equipe Externa", "Equipe na Delegacia/BASE"] + [
+                f"Equipe {i:02d}" for i in range(1, 21)
+            ]
 
             if not df_equipe_op.empty:
                 for eq_nome in sorted(df_equipe_op["nome_equipe"].unique()):
@@ -416,8 +437,7 @@ with tab_gerenciar:
                     membro_lider = membros_eq[membros_eq.get("is_lider", False) == True]
                     lider_txt = "Não definido"
                     if not membro_lider.empty:
-                        lider_id = membro_lider.iloc[0]["servidor_id"]
-                        lider_txt = mapa_servidores.get(lider_id, "Não encontrado")
+                        lider_txt = nome_membro_equipe(membro_lider.iloc[0], mapa_servidores)
 
                     vtr_id_eq = None
                     for _, row_m in membros_eq.iterrows():
@@ -446,7 +466,7 @@ with tab_gerenciar:
 
                             dados_membros_exibir.append({
                                 "ID Registro": row_m["id"],
-                                "Policial": mapa_servidores.get(row_m["servidor_id"], "Não encontrado"),
+                                "Policial": nome_membro_equipe(row_m, mapa_servidores),
                                 "Função na Equipe": cargo_funcao,
                                 "Folga Programada": status_folga
                             })
@@ -469,82 +489,121 @@ with tab_gerenciar:
                     "disponibilidade (conflitos de escala) não será aplicada."
                 )
 
-            busca_add_policial = st.text_input(
-                "🔎 Buscar policial por nome ou iniciais (ex: 'MDS' para Marcelo De Souza)",
-                key="busca_add_policial",
+            add_nome_equipe = st.selectbox(
+                "Escolha a Equipe", options=equipes_existentes, key="sel_equipe_add_policial"
             )
-            mapa_servidores_busca = filtrar_por_busca(mapa_servidores, busca_add_policial)
-            if busca_add_policial and not mapa_servidores_busca:
-                st.warning("Nenhum policial encontrado com esse termo de busca.")
-            opcoes_policial_form = mapa_servidores_busca if mapa_servidores_busca else mapa_servidores
+
+            eh_equipe_externa = add_nome_equipe == "Equipe Externa"
+
+            if not eh_equipe_externa:
+                busca_add_policial = st.text_input(
+                    "🔎 Buscar policial por nome ou iniciais (ex: 'MDS' para Marcelo De Souza)",
+                    key="busca_add_policial",
+                )
+                mapa_servidores_busca = filtrar_por_busca(mapa_servidores, busca_add_policial)
+                if busca_add_policial and not mapa_servidores_busca:
+                    st.warning("Nenhum policial encontrado com esse termo de busca.")
+                opcoes_policial_form = mapa_servidores_busca if mapa_servidores_busca else mapa_servidores
+            else:
+                st.info(
+                    "🧾 Equipe Externa: digite o nome da pessoa manualmente — ela não precisa "
+                    "estar cadastrada no sistema (ex: agentes de outra unidade/órgão)."
+                )
 
             with st.form("form_add_policial_equipe"):
-                col_eq1, col_eq2, col_eq3 = st.columns(3)
+                col_eq1, col_eq2 = st.columns(2)
                 with col_eq1:
-                    add_servidor = st.selectbox(
-                        "Selecione o Policial",
-                        options=list(opcoes_policial_form.keys()),
-                        format_func=lambda x: opcoes_policial_form.get(x, mapa_servidores.get(x, "")),
-                    )
+                    if eh_equipe_externa:
+                        add_nome_externo = st.text_input("Nome da pessoa (Equipe Externa)*")
+                        add_servidor = None
+                    else:
+                        add_servidor = st.selectbox(
+                            "Selecione o Policial",
+                            options=list(opcoes_policial_form.keys()),
+                            format_func=lambda x: opcoes_policial_form.get(x, mapa_servidores.get(x, "")),
+                        )
+                        add_nome_externo = None
                 with col_eq2:
-                    add_nome_equipe = st.selectbox("Escolha a Equipe", options=equipes_existentes)
-                with col_eq3:
                     add_viatura = st.selectbox("Defina a Viatura da Equipe", options=[None] + list(mapa_viaturas.keys()), format_func=lambda x: "Nenhuma Viatura" if x is None else mapa_viaturas[x])
 
-                add_is_lider = st.checkbox("👑 Definir este policial como Líder da Equipe selecionada")
+                add_is_lider = st.checkbox("👑 Definir esta pessoa como Líder da Equipe selecionada")
 
                 btn_confirmar_membro = st.form_submit_button("➕ Vincular à Equipe")
 
                 if btn_confirmar_membro:
-                    if data_ini_padrao and data_fim_padrao:
-                        disponivel, motivo = servidor_disponivel_periodo(
-                            int(add_servidor), data_ini_padrao, data_fim_padrao
-                        )
-                        viatura_ok = True
-                        motivo_viatura = ""
-                        if add_viatura is not None:
-                            viatura_ok, motivo_viatura = viatura_disponivel_periodo(
-                                int(add_viatura), data_ini_padrao, data_fim_padrao,
-                                operacao_atual_id=int(operacao_id),
-                                nome_equipe_atual=add_nome_equipe,
-                            )
-                    else:
-                        disponivel, motivo = True, ""
-                        viatura_ok, motivo_viatura = True, ""
-
-                    if not disponivel:
-                        st.error(f"⚠️ Não é possível escalar este policial: {motivo}")
-                    elif not viatura_ok:
-                        st.error(f"⚠️ Não é possível usar esta viatura: {motivo_viatura}")
-                    else:
-                        if add_is_lider and not df_equipe_op.empty:
-                            lideres_antigos = df_equipe_op[(df_equipe_op["nome_equipe"] == add_nome_equipe) & (df_equipe_op.get("is_lider", False) == True)]
-                            for _, row_antigo in lideres_antigos.iterrows():
-                                update_row("equipes_operacoes", row_antigo["id"], {"is_lider": False})
-
-                        dados_membro = {
-                            "operacao_id": int(id_op_selecionada),
-                            "servidor_id": int(add_servidor),
-                            "nome_equipe": add_nome_equipe,
-                            "viatura_id": int(add_viatura) if add_viatura else None,
-                            "is_lider": bool(add_is_lider),
-                            "possui_folga": False,
-                            "folga_data": None,
-                            "folga_duracao": None,
-                            "referencia_operacao": None
-                        }
-
-                        resultado_link = insert_row("equipes_operacoes", dados_membro)
-                        if resultado_link:
-                            st.toast("Policial adicionado! Configure a folga no painel acima.", icon="✔️")
-                            st.rerun()
+                    if eh_equipe_externa:
+                        if not add_nome_externo or not add_nome_externo.strip():
+                            st.error("⚠️ Informe o nome da pessoa da Equipe Externa.")
                         else:
-                            st.error("❌ Erro ao salvar integrante.")
+                            dados_membro = {
+                                "operacao_id": int(id_op_selecionada),
+                                "servidor_id": None,
+                                "nome_externo": add_nome_externo.strip(),
+                                "nome_equipe": add_nome_equipe,
+                                "viatura_id": int(add_viatura) if add_viatura else None,
+                                "is_lider": bool(add_is_lider),
+                                "possui_folga": False,
+                                "folga_data": None,
+                                "folga_duracao": None,
+                                "referencia_operacao": None
+                            }
+                            resultado_link = insert_row("equipes_operacoes", dados_membro)
+                            if resultado_link:
+                                st.toast("Pessoa da Equipe Externa adicionada!", icon="✔️")
+                                st.rerun()
+                            else:
+                                st.error("❌ Erro ao salvar integrante.")
+                    else:
+                        if data_ini_padrao and data_fim_padrao:
+                            disponivel, motivo = servidor_disponivel_periodo(
+                                int(add_servidor), data_ini_padrao, data_fim_padrao
+                            )
+                            viatura_ok = True
+                            motivo_viatura = ""
+                            if add_viatura is not None:
+                                viatura_ok, motivo_viatura = viatura_disponivel_periodo(
+                                    int(add_viatura), data_ini_padrao, data_fim_padrao,
+                                    operacao_atual_id=int(id_op_selecionada),
+                                    nome_equipe_atual=add_nome_equipe,
+                                )
+                        else:
+                            disponivel, motivo = True, ""
+                            viatura_ok, motivo_viatura = True, ""
+
+                        if not disponivel:
+                            st.error(f"⚠️ Não é possível escalar este policial: {motivo}")
+                        elif not viatura_ok:
+                            st.error(f"⚠️ Não é possível usar esta viatura: {motivo_viatura}")
+                        else:
+                            if add_is_lider and not df_equipe_op.empty:
+                                lideres_antigos = df_equipe_op[(df_equipe_op["nome_equipe"] == add_nome_equipe) & (df_equipe_op.get("is_lider", False) == True)]
+                                for _, row_antigo in lideres_antigos.iterrows():
+                                    update_row("equipes_operacoes", row_antigo["id"], {"is_lider": False})
+
+                            dados_membro = {
+                                "operacao_id": int(id_op_selecionada),
+                                "servidor_id": int(add_servidor),
+                                "nome_externo": None,
+                                "nome_equipe": add_nome_equipe,
+                                "viatura_id": int(add_viatura) if add_viatura else None,
+                                "is_lider": bool(add_is_lider),
+                                "possui_folga": False,
+                                "folga_data": None,
+                                "folga_duracao": None,
+                                "referencia_operacao": None
+                            }
+
+                            resultado_link = insert_row("equipes_operacoes", dados_membro)
+                            if resultado_link:
+                                st.toast("Policial adicionado! Configure a folga no painel acima.", icon="✔️")
+                                st.rerun()
+                            else:
+                                st.error("❌ Erro ao salvar integrante.")
 
             if not df_equipe_op.empty:
                 with st.expander("🗑️ Remover Policial de uma Equipe"):
                     opcoes_remover = {
-                        row["id"]: f"{mapa_servidores.get(row['servidor_id'], 'N/D')} — {row['nome_equipe']}"
+                        row["id"]: f"{nome_membro_equipe(row, mapa_servidores)} — {row['nome_equipe']}"
                         for _, row in df_equipe_op.iterrows()
                     }
                     membro_remover_id = st.selectbox("Selecione o integrante para remover:", options=list(opcoes_remover.keys()), format_func=lambda x: opcoes_remover[x])
@@ -593,7 +652,7 @@ with tab_gerenciar:
                     lider_eq_membros = membros_eq[membros_eq.get("is_lider", False) == True]
                     lider_pdf_txt = "Não definido"
                     if not lider_eq_membros.empty:
-                        lider_pdf_txt = mapa_servidores.get(lider_eq_membros.iloc[0]["servidor_id"], "Não encontrado")
+                        lider_pdf_txt = nome_membro_equipe(lider_eq_membros.iloc[0], mapa_servidores)
 
                     vtr_id_eq = None
                     for _, row_m in membros_eq.iterrows():
@@ -620,7 +679,7 @@ with tab_gerenciar:
                         else:
                             folga_desc = " (Sem Folga)"
 
-                        texto_equipes_pdf += f"     - {mapa_servidores.get(row_m['servidor_id'], 'Policial')}{funcao_marcador}{folga_desc}\n"
+                        texto_equipes_pdf += f"     - {nome_membro_equipe(row_m, mapa_servidores)}{funcao_marcador}{folga_desc}\n"
             else:
                 texto_equipes_pdf = "Nenhuma equipe montada para esta operação."
 
