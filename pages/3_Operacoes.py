@@ -625,6 +625,39 @@ with tab_gerenciar:
                         st.toast("Integrante removido!", icon="🗑️")
                         st.rerun()
 
+                with st.expander("🗑️ Excluir uma Equipe Inteira"):
+                    nomes_equipes_atuais = sorted(df_equipe_op["nome_equipe"].dropna().unique().tolist())
+                    equipe_para_excluir = st.selectbox(
+                        "Selecione a equipe a ser excluída (todos os integrantes dela serão removidos):",
+                        options=nomes_equipes_atuais,
+                        key="sel_equipe_excluir",
+                    )
+                    membros_da_equipe = df_equipe_op[df_equipe_op["nome_equipe"] == equipe_para_excluir]
+                    st.warning(
+                        f"⚠️ Isso vai remover **{len(membros_da_equipe)} integrante(s)** da "
+                        f"**{equipe_para_excluir}**: "
+                        + ", ".join(nome_membro_equipe(row, mapa_servidores) for _, row in membros_da_equipe.iterrows())
+                    )
+                    confirmar_exclusao_equipe = st.checkbox(
+                        f"Confirmo que quero excluir a {equipe_para_excluir} inteira",
+                        key="chk_confirmar_excluir_equipe",
+                    )
+                    if st.button("🗑️ Excluir Equipe Inteira", type="primary", disabled=not confirmar_exclusao_equipe):
+                        afastamentos_existentes = fetch_table("afastamentos")
+                        for _, membro_row in membros_da_equipe.iterrows():
+                            tag_referencia = f"[ref:eq{membro_row['id']}]"
+                            if not afastamentos_existentes.empty:
+                                antigos = afastamentos_existentes[
+                                    afastamentos_existentes["observacoes"].astype(str).str.contains(
+                                        tag_referencia, regex=False, na=False
+                                    )
+                                ]
+                                for antigo_id in antigos["id"].tolist():
+                                    delete_row("afastamentos", antigo_id)
+                            delete_row("equipes_operacoes", membro_row["id"])
+                        st.toast(f"{equipe_para_excluir} excluída com sucesso!", icon="🗑️")
+                        st.rerun()
+
             st.markdown("---")
 
             # --- SEÇÃO 3: PDF DA ORDEM DE SERVIÇO ---
