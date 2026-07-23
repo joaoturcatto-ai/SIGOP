@@ -836,6 +836,18 @@ with tab_cadastrar:
     )
 
     st.markdown("---")
+    st.markdown("### 📅 Data da operação")
+    st.caption(
+        "As datas ficam aqui fora do formulário principal para que a escala automática "
+        "(mais abaixo) consiga checar quem está disponível nesse período."
+    )
+    col_data1, col_data2 = st.columns(2)
+    with col_data1:
+        cad_data_ini = st.date_input("Data de Início (opcional)", value=None, key="cad_data_ini_novo")
+    with col_data2:
+        cad_data_fim = st.date_input("Data de Fim (opcional)", value=None, key="cad_data_fim_novo")
+
+    st.markdown("---")
     st.markdown("### 👥 Montar equipes já nesta etapa (opcional)")
     qtd_equipes_novo = st.number_input(
         "Quantas equipes você quer montar agora?",
@@ -843,6 +855,58 @@ with tab_cadastrar:
         key="qtd_equipes_novo",
         help="Deixe 0 se preferir montar as equipes depois, na aba 'Gerenciar e Editar Operação'.",
     )
+
+    if qtd_equipes_novo > 0:
+        st.markdown("#### 🤖 Escala automática (opcional)")
+        st.caption(
+            "Preenche as equipes abaixo com quem menos foi escalado em operações até agora. "
+            "Você ainda pode ajustar manualmente depois de gerar a sugestão."
+        )
+        col_auto1, col_auto2 = st.columns([1.5, 2])
+        with col_auto1:
+            qtd_por_equipe_auto = st.number_input(
+                "Quantos policiais por equipe?", min_value=1, max_value=15, value=2, step=1,
+                key="qtd_por_equipe_auto",
+            )
+        with col_auto2:
+            st.write("")
+            st.write("")
+            if st.button("🤖 Preencher automaticamente com quem menos foi escalado"):
+                hist_equipes = fetch_table("equipes_operacoes")
+                contagem_serie = (
+                    hist_equipes[hist_equipes["servidor_id"].notna()].groupby("servidor_id").size()
+                    if not hist_equipes.empty
+                    else pd.Series(dtype=int)
+                )
+                candidatos_ids = df_servidores["id"].tolist() if not df_servidores.empty else []
+                candidatos_ordenados = sorted(
+                    candidatos_ids, key=lambda sid: int(contagem_serie.get(sid, 0))
+                )
+
+                if cad_data_ini and cad_data_fim:
+                    candidatos_disponiveis = [
+                        sid for sid in candidatos_ordenados
+                        if servidor_disponivel_periodo(int(sid), cad_data_ini, cad_data_fim)[0]
+                    ]
+                else:
+                    candidatos_disponiveis = candidatos_ordenados
+
+                total_necessario = int(qtd_equipes_novo) * int(qtd_por_equipe_auto)
+                escolhidos = candidatos_disponiveis[:total_necessario]
+
+                for i in range(1, int(qtd_equipes_novo) + 1):
+                    inicio = (i - 1) * int(qtd_por_equipe_auto)
+                    fim = inicio + int(qtd_por_equipe_auto)
+                    st.session_state[f"membros_eq_{i}"] = escolhidos[inicio:fim]
+
+                if len(escolhidos) < total_necessario:
+                    st.warning(
+                        f"⚠️ Só encontrei {len(escolhidos)} policial(is) disponível(is) no período "
+                        f"informado — o ideal seriam {total_necessario}. Preenchi o que deu, "
+                        "complete manualmente abaixo se precisar."
+                    )
+                else:
+                    st.success("✅ Sugestão preenchida abaixo! Ajuste manualmente se quiser antes de criar.")
 
     with st.form("form_nova_operacao", clear_on_submit=True):
         col_c1, col_c2 = st.columns(2)
@@ -867,8 +931,14 @@ with tab_cadastrar:
             )
 
         with col_c2:
-            cad_data_ini = st.date_input("Data de Início (opcional)", value=None)
-            cad_data_fim = st.date_input("Data de Fim (opcional)", value=None)
+            st.text_input(
+                "Período selecionado",
+                value=(
+                    f"{cad_data_ini} até {cad_data_fim}" if cad_data_ini and cad_data_fim
+                    else "Sem datas definidas (escolha acima, fora deste formulário)"
+                ),
+                disabled=True,
+            )
             cad_horario = st.time_input("Horário de início", value=time(8, 0))
             cad_horario_fim = st.time_input(
                 "Horário de término previsto (opcional)",
