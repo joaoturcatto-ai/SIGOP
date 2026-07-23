@@ -859,54 +859,92 @@ with tab_cadastrar:
     if qtd_equipes_novo > 0:
         st.markdown("#### 🤖 Escala automática (opcional)")
         st.caption(
-            "Preenche as equipes abaixo com quem menos foi escalado em operações até agora. "
+            "Preenche as equipes abaixo com quem menos foi escalado em operações até agora, "
+            "respeitando quantos de cada cargo você precisa por equipe. "
             "Você ainda pode ajustar manualmente depois de gerar a sugestão."
         )
-        col_auto1, col_auto2 = st.columns([1.5, 2])
+        col_auto1, col_auto2, col_auto3 = st.columns(3)
         with col_auto1:
-            qtd_por_equipe_auto = st.number_input(
-                "Quantos policiais por equipe?", min_value=1, max_value=15, value=2, step=1,
-                key="qtd_por_equipe_auto",
+            qtd_delegados_auto = st.number_input(
+                "Delegados por equipe", min_value=0, max_value=5, value=1, step=1,
+                key="qtd_delegados_auto",
             )
         with col_auto2:
-            st.write("")
-            st.write("")
-            if st.button("🤖 Preencher automaticamente com quem menos foi escalado"):
-                hist_equipes = fetch_table("equipes_operacoes")
-                contagem_serie = (
-                    hist_equipes[hist_equipes["servidor_id"].notna()].groupby("servidor_id").size()
-                    if not hist_equipes.empty
-                    else pd.Series(dtype=int)
-                )
-                candidatos_ids = df_servidores["id"].tolist() if not df_servidores.empty else []
-                candidatos_ordenados = sorted(
-                    candidatos_ids, key=lambda sid: int(contagem_serie.get(sid, 0))
-                )
+            qtd_escrivaes_auto = st.number_input(
+                "Escrivães por equipe", min_value=0, max_value=5, value=1, step=1,
+                key="qtd_escrivaes_auto",
+            )
+        with col_auto3:
+            qtd_investigadores_auto = st.number_input(
+                "Investigadores por equipe", min_value=0, max_value=10, value=2, step=1,
+                key="qtd_investigadores_auto",
+            )
 
+        if st.button("🤖 Preencher automaticamente com quem menos foi escalado"):
+            hist_equipes = fetch_table("equipes_operacoes")
+            contagem_serie = (
+                hist_equipes[hist_equipes["servidor_id"].notna()].groupby("servidor_id").size()
+                if not hist_equipes.empty
+                else pd.Series(dtype=int)
+            )
+
+            cargos_qtd = {
+                "Delegado de Polícia": int(qtd_delegados_auto),
+                "Escrivão de Polícia": int(qtd_escrivaes_auto),
+                "Investigador de Polícia": int(qtd_investigadores_auto),
+            }
+
+            # Exclui o Núcleo de Inteligência da escala automática — esse pessoal
+            # não entra na rotação normal de operações.
+            df_servidores_elegiveis = (
+                df_servidores[
+                    ~df_servidores["equipe"].astype(str).str.contains("intelig", case=False, na=False)
+                ]
+                if not df_servidores.empty
+                else df_servidores
+            )
+
+            candidatos_por_cargo = {}
+            for cargo, qtd_necessaria in cargos_qtd.items():
+                if qtd_necessaria <= 0 or df_servidores_elegiveis.empty:
+                    candidatos_por_cargo[cargo] = []
+                    continue
+                ids_do_cargo = df_servidores_elegiveis[df_servidores_elegiveis["cargo"] == cargo]["id"].tolist()
+                ordenados = sorted(ids_do_cargo, key=lambda sid: int(contagem_serie.get(sid, 0)))
                 if cad_data_ini and cad_data_fim:
-                    candidatos_disponiveis = [
-                        sid for sid in candidatos_ordenados
+                    ordenados = [
+                        sid for sid in ordenados
                         if servidor_disponivel_periodo(int(sid), cad_data_ini, cad_data_fim)[0]
                     ]
-                else:
-                    candidatos_disponiveis = candidatos_ordenados
+                candidatos_por_cargo[cargo] = ordenados
 
-                total_necessario = int(qtd_equipes_novo) * int(qtd_por_equipe_auto)
-                escolhidos = candidatos_disponiveis[:total_necessario]
+            ponteiros = {cargo: 0 for cargo in cargos_qtd}
+            avisos_auto = []
+            for i in range(1, int(qtd_equipes_novo) + 1):
+                selecionados_equipe = []
+                for cargo, qtd_necessaria in cargos_qtd.items():
+                    if qtd_necessaria <= 0:
+                        continue
+                    lista_cargo = candidatos_por_cargo[cargo]
+                    inicio = ponteiros[cargo]
+                    fim = inicio + qtd_necessaria
+                    escolhidos_cargo = lista_cargo[inicio:fim]
+                    ponteiros[cargo] = fim
+                    if len(escolhidos_cargo) < qtd_necessaria:
+                        avisos_auto.append(
+                            f"Equipe {i:02d}: faltaram {qtd_necessaria - len(escolhidos_cargo)} "
+                            f"{cargo}(s) disponível(is)."
+                        )
+                    selecionados_equipe.extend(escolhidos_cargo)
+                st.session_state[f"membros_eq_{i}"] = selecionados_equipe
 
-                for i in range(1, int(qtd_equipes_novo) + 1):
-                    inicio = (i - 1) * int(qtd_por_equipe_auto)
-                    fim = inicio + int(qtd_por_equipe_auto)
-                    st.session_state[f"membros_eq_{i}"] = escolhidos[inicio:fim]
-
-                if len(escolhidos) < total_necessario:
-                    st.warning(
-                        f"⚠️ Só encontrei {len(escolhidos)} policial(is) disponível(is) no período "
-                        f"informado — o ideal seriam {total_necessario}. Preenchi o que deu, "
-                        "complete manualmente abaixo se precisar."
-                    )
-                else:
-                    st.success("✅ Sugestão preenchida abaixo! Ajuste manualmente se quiser antes de criar.")
+            if avisos_auto:
+                st.warning(
+                    "⚠️ Nem todas as vagas foram preenchidas (faltou gente disponível "
+                    "daquele cargo):\n\n" + "\n".join(f"- {a}" for a in avisos_auto)
+                )
+            else:
+                st.success("✅ Sugestão preenchida abaixo, por cargo! Ajuste manualmente se quiser antes de criar.")
 
     with st.form("form_nova_operacao", clear_on_submit=True):
         col_c1, col_c2 = st.columns(2)
