@@ -54,7 +54,7 @@ with col_a:
                 how="left",
             )
             st.dataframe(
-                cqh_hoje[["nome", "cargo", "equipe"]], use_container_width=True
+                cqh_hoje[["nome", "cargo", "equipe"]], use_container_width=True, hide_index=True
             )
         else:
             st.info("Nenhum servidor escalado no CQH para hoje.")
@@ -70,6 +70,7 @@ with col_b:
             st.dataframe(
                 proximas[["nome", "data_inicio", "data_fim", "horario", "local", "status"]],
                 use_container_width=True,
+                hide_index=True,
             )
         else:
             st.info("Nenhuma operação futura cadastrada.")
@@ -90,6 +91,7 @@ if not afastamentos.empty and not servidores.empty:
         st.dataframe(
             afastados_hoje[["nome", "tipo", "data_inicio", "data_fim"]],
             use_container_width=True,
+            hide_index=True,
         )
     else:
         st.info("Nenhum servidor afastado hoje.")
