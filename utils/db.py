@@ -25,7 +25,7 @@ def get_client() -> Client:
 TABLE_COLUMNS = {
     "servidores": [
         "id", "nome", "matricula", "cargo", "equipe", "telefone",
-        "situacao", "observacoes", "created_at",
+        "situacao", "observacoes", "data_nascimento", "created_at",
     ],
     "viaturas": ["id", "identificacao", "modelo", "status", "placa_oficial", "placa_reservada", "created_at"],
     "operacoes": [
@@ -105,14 +105,11 @@ def servidor_disponivel(servidor_id: int, data_alvo: date) -> tuple[bool, str]:
             tipo = conflito.iloc[0]["tipo"]
             return False, f"Servidor está com {tipo} nesta data."
 
-    cqh = fetch_table("cqh")
-    if not cqh.empty:
-        conflito_cqh = cqh[
-            (cqh["servidor_id"] == servidor_id)
-            & (pd.to_datetime(cqh["data"]).dt.date == data_alvo)
-        ]
-        if not conflito_cqh.empty:
-            return False, "Servidor já está escalado no CQH nesta data."
+    # CQH (prontidão) NÃO bloqueia mais o servidor. CQH representa quem está
+    # de prontidão para ser acionado a qualquer momento — por definição, essas
+    # pessoas devem continuar disponíveis para serem escaladas em operações.
+    # (O histórico de CQH continua sendo registrado e contado no Ranking,
+    # só não é mais tratado como conflito de agenda.)
 
     operacoes = fetch_table("operacoes")
     participantes = fetch_table("equipes_operacoes")
