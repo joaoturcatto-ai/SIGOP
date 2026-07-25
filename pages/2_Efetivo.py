@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+from datetime import date
 from utils.db import fetch_table, insert_row, update_row, delete_row
 
 st.set_page_config(page_title="Efetivo - SIGOP", page_icon="👮", layout="wide")
@@ -70,6 +71,11 @@ with tab_lista:
                             dados["cargo"]
                         ),
                     )
+                    data_nasc_atual = dados.get("data_nascimento")
+                    data_nascimento = st.date_input(
+                        "Data de nascimento (opcional)",
+                        value=pd.to_datetime(data_nasc_atual).date() if pd.notna(data_nasc_atual) else None,
+                    )
                 with col2:
                     equipe = st.text_input("Equipe", value=dados.get("equipe", "") or "")
                     telefone = st.text_input(
@@ -100,6 +106,7 @@ with tab_lista:
                             "telefone": telefone,
                             "situacao": situacao,
                             "observacoes": observacoes,
+                            "data_nascimento": data_nascimento.isoformat() if data_nascimento else None,
                         },
                     )
                     st.success("Servidor atualizado com sucesso!")
@@ -120,6 +127,7 @@ with tab_novo:
                 "Cargo*",
                 ["Delegado de Polícia", "Escrivão de Polícia", "Investigador de Polícia"],
             )
+            data_nascimento = st.date_input("Data de nascimento (opcional)", value=None)
         with col2:
             equipe = st.text_input("Equipe")
             telefone = st.text_input("Telefone")
@@ -142,6 +150,7 @@ with tab_novo:
                         "telefone": telefone,
                         "situacao": situacao,
                         "observacoes": observacoes,
+                        "data_nascimento": data_nascimento.isoformat() if data_nascimento else None,
                     },
                 )
                 st.success(f"Servidor '{nome}' cadastrado com sucesso!")
