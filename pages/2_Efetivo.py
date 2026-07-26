@@ -3,6 +3,23 @@ import pandas as pd
 from datetime import date
 from utils.db import fetch_table, insert_row, update_row, delete_row
 
+
+def filtrar_por_busca(mapa: dict, termo: str) -> dict:
+    """Filtra um dicionário {id: rótulo} por um termo de busca.
+    Aceita tanto substring do nome quanto as iniciais das palavras
+    (ex: 'MDS' encontra 'MARCELO DE SOUZA')."""
+    if not termo:
+        return mapa
+    termo_up = termo.strip().upper()
+    resultado = {}
+    for chave, rotulo in mapa.items():
+        rotulo_up = str(rotulo).upper()
+        iniciais = "".join(p[0] for p in rotulo_up.split() if p)
+        if termo_up in rotulo_up or termo_up in iniciais:
+            resultado[chave] = rotulo
+    return resultado
+
+
 st.set_page_config(page_title="Efetivo - SIGOP", page_icon="👮", layout="wide")
 st.title("👮 Efetivo")
 st.caption("Cadastro de Delegados, Escrivães e Investigadores de Polícia")
@@ -48,10 +65,21 @@ with tab_lista:
 
         st.markdown("---")
         st.subheader("✏️ Editar ou remover servidor")
+
+        mapa_servidores_edit = {row["id"]: row["nome"] for _, row in filtrado.iterrows()}
+        busca_servidor_edit = st.text_input(
+            "🔎 Buscar por nome ou iniciais (ex: 'MDS' para Marcelo De Souza)",
+            key="busca_servidor_edit",
+        )
+        mapa_servidores_edit_filtrado = filtrar_por_busca(mapa_servidores_edit, busca_servidor_edit)
+        if busca_servidor_edit and not mapa_servidores_edit_filtrado:
+            st.warning("Nenhum servidor encontrado com esse termo.")
+        opcoes_servidor_edit = mapa_servidores_edit_filtrado if mapa_servidores_edit_filtrado else mapa_servidores_edit
+
         servidor_selecionado = st.selectbox(
             "Selecione um servidor",
-            options=filtrado["id"].tolist(),
-            format_func=lambda x: filtrado[filtrado["id"] == x]["nome"].values[0],
+            options=list(opcoes_servidor_edit.keys()),
+            format_func=lambda x: opcoes_servidor_edit.get(x, mapa_servidores_edit.get(x, "")),
         )
 
         if servidor_selecionado:
@@ -75,6 +103,9 @@ with tab_lista:
                     data_nascimento = st.date_input(
                         "Data de nascimento (opcional)",
                         value=pd.to_datetime(data_nasc_atual).date() if pd.notna(data_nasc_atual) else None,
+                        format="DD/MM/YYYY",
+                        min_value=date(1940, 1, 1),
+                        max_value=date.today(),
                     )
                 with col2:
                     equipe = st.text_input("Equipe", value=dados.get("equipe", "") or "")
@@ -127,7 +158,13 @@ with tab_novo:
                 "Cargo*",
                 ["Delegado de Polícia", "Escrivão de Polícia", "Investigador de Polícia"],
             )
-            data_nascimento = st.date_input("Data de nascimento (opcional)", value=None)
+            data_nascimento = st.date_input(
+                "Data de nascimento (opcional)",
+                value=None,
+                format="DD/MM/YYYY",
+                min_value=date(1940, 1, 1),
+                max_value=date.today(),
+            )
         with col2:
             equipe = st.text_input("Equipe")
             telefone = st.text_input("Telefone")
