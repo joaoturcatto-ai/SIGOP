@@ -75,6 +75,8 @@ def nome_membro_equipe(row_m, mapa_servidores_local):
 
 # Carrega os dados necessários do banco
 df_operacoes = fetch_table("operacoes", order_by="id")
+if not df_operacoes.empty:
+    df_operacoes = df_operacoes.sort_values("id", ascending=False).reset_index(drop=True)
 df_servidores = fetch_table("servidores")
 df_viaturas = fetch_table("viaturas")
 df_equipes = fetch_table("equipes_operacoes")
