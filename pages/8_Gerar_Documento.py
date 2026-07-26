@@ -54,7 +54,9 @@ def nome_membro_equipe(row_m, mapa_servidores_local):
 
 
 try:
-    operacoes = fetch_table("operacoes", order_by="data_inicio")
+    operacoes = fetch_table("operacoes", order_by="id")
+    if not operacoes.empty:
+        operacoes = operacoes.sort_values("id", ascending=False).reset_index(drop=True)
     servidores = fetch_table("servidores")
     viaturas = fetch_table("viaturas")
     participantes = fetch_table("equipes_operacoes")
