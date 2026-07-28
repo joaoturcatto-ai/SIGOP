@@ -1,6 +1,9 @@
 import streamlit as st
 import pandas as pd
 from utils.db import client
+from utils.auth import check_login
+
+check_login()
 
 # Configuração Padrão Institucional SIGOP 2.0
 st.set_page_config(
