@@ -2,6 +2,9 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from utils.db import fetch_table
+from utils.auth import check_login
+
+check_login()
 
 st.set_page_config(page_title="Ranking - SIGOP", page_icon="📊", layout="wide")
 st.title("📊 Ranking Inteligente")
