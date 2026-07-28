@@ -2,6 +2,9 @@ import streamlit as st
 import pandas as pd
 from datetime import date
 from utils.db import fetch_table, insert_row, update_row, delete_row
+from utils.auth import check_login
+
+check_login()
 
 
 def filtrar_por_busca(mapa: dict, termo: str) -> dict:
