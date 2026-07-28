@@ -9,6 +9,9 @@ from utils.db import (
     servidor_disponivel_periodo,
     viatura_disponivel_periodo,
 )
+from utils.auth import check_login
+
+check_login()
 
 st.set_page_config(page_title="Operações - SIGOP", layout="wide")
 
