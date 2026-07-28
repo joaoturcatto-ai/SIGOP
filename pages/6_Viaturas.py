@@ -1,5 +1,8 @@
 import streamlit as st
 from utils.db import fetch_table, insert_row, update_row, delete_row
+from utils.auth import check_login
+
+check_login()
 
 st.set_page_config(page_title="Viaturas - SIGOP", page_icon="🚓", layout="wide")
 st.title("🚓 Viaturas")
