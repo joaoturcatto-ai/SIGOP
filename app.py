@@ -31,7 +31,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.markdown("<h5 style='text-align: center; color: grey; margin-bottom:-10px;'>POLÍCIA CIVIL DO ESTADO DE MATO GROSSO</h5>", unsafe_allow_html=True)
-st.markdown("<h2 style='text-align: center; margin-bottom:-5px;'>DELEGACIA ESPECIALIZADA DE ESTELIONATO</h2>", unsafe_allow_html=True)
+st.markdown("<h2 style='text-align: center; margin-bottom:-5px;'>DELEGACIA ESPECIALIZADA DE ESTELIONATO DE CUIABÁ</h2>", unsafe_allow_html=True)
 st.markdown("<h1 style='text-align: center; font-size: 42px; margin-top: 20px;'>SIGOP 2.0</h1>", unsafe_allow_html=True)
 st.markdown("<p style='text-align: center; font-style: italic; color: #b89243;'>Sistema Integrado de Gestão Operacional Policial</p><br>", unsafe_allow_html=True)
 
