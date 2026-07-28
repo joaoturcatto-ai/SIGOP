@@ -9,6 +9,9 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib import colors
 from utils.db import fetch_table
+from utils.auth import check_login
+
+check_login()
 
 st.set_page_config(page_title="Gerar Documento - SIGOP", page_icon="📄", layout="wide")
 st.title("📄 Gerar Ordem de Operação")
