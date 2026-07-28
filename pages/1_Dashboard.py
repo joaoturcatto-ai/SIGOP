@@ -2,6 +2,9 @@ import streamlit as st
 import pandas as pd
 from datetime import date
 from utils.db import fetch_table
+from utils.auth import check_login
+
+check_login()
 
 st.set_page_config(page_title="Dashboard - SIGOP", page_icon="🏠", layout="wide")
 st.title("🏠 Dashboard")
